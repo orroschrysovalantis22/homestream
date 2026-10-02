@@ -33,7 +33,7 @@ command -v brew >/dev/null || die "Homebrew is required. Install it from https:/
 
 # --- Command-line tools -------------------------------------------------------
 step "Command-line tools"
-FORMULAE=(ffmpeg switchaudio-osx qrencode)
+FORMULAE=(ffmpeg media-control switchaudio-osx qrencode)
 [[ $WITH_SNAPCAST == 1 ]] && FORMULAE+=(snapcast)
 for f in "${FORMULAE[@]}"; do
   if brew list --formula "$f" >/dev/null 2>&1; then
@@ -55,7 +55,9 @@ else
     echo "    Skipped. Install it later with: brew install --cask blackhole-2ch"
   fi
 fi
-if ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | grep -qF "] BlackHole 2ch"; then
+# ffmpeg exits non-zero after listing devices; don't let pipefail turn that into "missing".
+DEVICES="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+if grep -qF "] BlackHole 2ch" <<<"$DEVICES"; then
   ok "BlackHole 2ch visible to ffmpeg"
 else
   echo "    ! BlackHole isn't visible yet. If you just installed it, restart the Mac."

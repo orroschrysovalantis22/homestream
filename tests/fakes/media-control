@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Stand-in for the media-control CLI, so tests never touch real playback.
+
+`stream` prints one now-playing update, then a second one when a command
+has been run; every other argument is appended to $FAKE_MEDIA_LOG.
+"""
+import base64
+import json
+import os
+import sys
+import time
+
+LOG = os.environ.get("FAKE_MEDIA_LOG", "/dev/null")
+ART = base64.b64encode(b"\xff\xd8fake-jpeg-bytes").decode()
+
+
+def update(title, playing=True):
+    payload = {
+        "title": title, "artist": "Test Artist", "album": "Test Album", "playing": playing,
+        "duration": 200.5, "elapsedTime": 12.0, "timestamp": "2026-01-01T00:00:00Z",
+        "bundleIdentifier": "com.example.FakePlayer", "artworkData": ART, "artworkMimeType": "image/jpeg",
+    }
+    print(json.dumps({"type": "data", "diff": False, "payload": payload}), flush=True)
+
+
+if sys.argv[1:2] == ["stream"]:
+    update("First Song")
+    seen = 0
+    while True:
+        time.sleep(0.05)
+        try:
+            lines = open(LOG).read().split()
+        except FileNotFoundError:
+            lines = []
+        if len(lines) > seen:
+            seen = len(lines)
+            update("Second Song", playing=lines[-1] != "pause")
+else:
+    with open(LOG, "a") as f:
+        f.write(" ".join(sys.argv[1:]) + "\n")

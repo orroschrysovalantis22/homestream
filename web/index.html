@@ -16,31 +16,34 @@
   :root {
     --bg: #f4f4f1;
     --surface: #ffffff;
-    --surface-2: #e9e9e4;
+    --surface-2: #e7e7e2;
     --text: #15161a;
     --muted: #6b6d75;
     --accent: #1f9d6a;
     --accent-ink: #ffffff;
     --danger: #c2412d;
-    --ring: color-mix(in srgb, var(--accent) 35%, transparent);
-    --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .06);
+    --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 30px rgb(0 0 0 / .08);
+    --art-shadow: 0 18px 40px rgb(0 0 0 / .18);
+    --backdrop-opacity: .28;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0e0f12;
-      --surface: #17191e;
-      --surface-2: #22252c;
+      --surface: #1a1c21;
+      --surface-2: #262930;
       --text: #f2f2ee;
       --muted: #9a9ca5;
       --accent: #3ddc97;
       --accent-ink: #06210f;
       --danger: #ff7a62;
       --shadow: none;
+      --art-shadow: 0 20px 50px rgb(0 0 0 / .55);
+      --backdrop-opacity: .45;
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; min-height: 100%; }
   body {
     background: var(--bg);
     color: var(--text);
@@ -49,56 +52,78 @@
     -webkit-tap-highlight-color: transparent;
     padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
   }
-  main { max-width: 440px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; gap: 20px; padding: 16px 0 24px; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  svg { fill: currentColor; }
+
+  /* Blurred album art behind everything, like a music app's now-playing screen. */
+  .backdrop {
+    position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+    background: center/cover no-repeat; filter: blur(60px) saturate(1.5);
+    opacity: 0; transition: opacity .8s ease, background-image .8s ease;
+  }
+  .backdrop.on { opacity: var(--backdrop-opacity); }
+
+  main { max-width: 440px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; gap: 18px; padding: 14px 0 20px; }
   header { display: flex; align-items: center; justify-content: space-between; }
-  h1 { font-size: 18px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  h1 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
   .conn { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .dot.ok { background: var(--accent); }
   .dot.bad { background: var(--danger); }
 
-  .card { background: var(--surface); border-radius: 20px; padding: 16px; box-shadow: var(--shadow); }
-  .now { display: grid; grid-template-columns: 72px 1fr; gap: 14px; align-items: center; }
   .art {
-    width: 72px; height: 72px; border-radius: 12px; background: var(--surface-2) center/cover no-repeat;
-    display: grid; place-items: center; color: var(--muted);
+    width: min(100%, 42vh); aspect-ratio: 1; margin: 6px auto 0; border-radius: 20px;
+    background: var(--surface-2) center/cover no-repeat; box-shadow: var(--art-shadow);
+    display: grid; place-items: center; color: var(--muted); transition: transform .25s ease;
   }
+  .art svg { width: 30%; height: 30%; opacity: .55; }
   .art.has-img svg { display: none; }
-  .meta { min-width: 0; }
-  .title { font-weight: 620; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .chip { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 99px; padding: 2px 9px; }
+  body.paused .art { transform: scale(.94); }
 
-  .listen-wrap { display: grid; place-items: center; padding: 8px 0; }
-  .listen {
-    width: 168px; height: 168px; border-radius: 50%; border: 0; cursor: pointer;
-    background: var(--surface); color: var(--text); box-shadow: var(--shadow), inset 0 0 0 2px var(--surface-2);
-    display: grid; place-items: center; align-content: center; gap: 6px; font: inherit; font-weight: 600;
-    transition: transform .12s ease, background .2s ease;
-  }
-  .listen:active { transform: scale(.96); }
-  .listen svg { width: 44px; height: 44px; }
-  .listen .sub { font-size: 13px; font-weight: 500; color: var(--muted); }
-  .listen.live { background: var(--accent); color: var(--accent-ink); animation: pulse 2.4s ease-out infinite; }
-  .listen.live .sub { color: inherit; opacity: .75; }
-  .listen.connecting { box-shadow: inset 0 0 0 3px var(--accent); }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--ring); } 70%, 100% { box-shadow: 0 0 0 22px transparent; } }
+  .meta { min-width: 0; transition: opacity .2s; }
+  .meta.skipping { opacity: .35; }
+  .title { font-size: 22px; font-weight: 700; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artist { font-size: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .source { margin-top: 4px; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .source svg { width: 14px; height: 14px; }
 
-  .controls { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 12px; }
-  .ctl {
-    height: 76px; border: 0; border-radius: 20px; cursor: pointer; font: inherit;
-    background: var(--surface); color: var(--text); box-shadow: var(--shadow);
-    display: grid; place-items: center; transition: transform .1s ease, background .15s ease;
-  }
-  .ctl:active { transform: scale(.95); background: var(--surface-2); }
-  .ctl svg { width: 30px; height: 30px; }
+  .progress { display: grid; gap: 6px; }
+  .bar { height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .fill { height: 100%; width: 0; background: var(--text); border-radius: inherit; }
+  .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .progress.hidden { visibility: hidden; }
+
+  .transport { display: flex; align-items: center; justify-content: space-evenly; }
+  .ctl { border: 0; background: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; transition: transform .1s, background .15s; }
+  .ctl:active { transform: scale(.9); background: var(--surface-2); }
+  .ctl svg { width: 34px; height: 34px; }
+  .ctl.main { width: 80px; height: 80px; background: var(--text); color: var(--bg); }
+  .ctl.main:active { background: var(--text); }
   .ctl.main svg { width: 38px; height: 38px; }
-  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 -8px 4px; }
 
-  footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--muted); }
+  .listen {
+    margin-top: auto; height: 58px; border: 0; border-radius: 29px; width: 100%;
+    background: var(--surface); box-shadow: var(--shadow), inset 0 0 0 1.5px var(--surface-2);
+    display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 650; font-size: 17px;
+    transition: background .2s, color .2s, transform .1s;
+  }
+  .listen:active { transform: scale(.98); }
+  .listen svg { width: 22px; height: 22px; }
+  .listen .sub { font-weight: 500; font-size: 14px; opacity: .7; }
+  .listen.live { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+  .listen.connecting { box-shadow: inset 0 0 0 2px var(--accent); }
+  .eq { display: none; gap: 3px; align-items: flex-end; height: 18px; }
+  .eq i { width: 3px; background: currentColor; border-radius: 2px; animation: eq 1s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: -.4s; } .eq i:nth-child(3) { animation-delay: -.7s; } .eq i:nth-child(4) { animation-delay: -.2s; }
+  @keyframes eq { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+  .listen.live .eq { display: flex; }
+  .listen.live .headphones { display: none; }
+
+  footer { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
   .footer-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-  .link { background: none; border: 0; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; padding: 6px 0; }
+  .link { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 4px 0; font-size: 13px; }
   .warn { color: var(--danger); }
+  #debug { display: none; font: 12px ui-monospace, monospace; }
 
   .toast {
     position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto;
@@ -109,28 +134,23 @@
 
   #login { display: none; }
   body.locked #login { display: flex; }
-  body.locked #app { display: none; }
-  #login form { display: flex; flex-direction: column; gap: 12px; }
-  #login input {
-    font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--surface-2);
-    background: var(--surface); color: var(--text); width: 100%;
-  }
-  #login button { font: inherit; font-weight: 600; padding: 14px; border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-ink); }
+  body.locked #app, body.locked .backdrop { display: none; }
+  #login form { display: flex; flex-direction: column; gap: 12px; background: var(--surface); padding: 16px; border-radius: 20px; box-shadow: var(--shadow); }
+  #login input { font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--surface-2); background: var(--bg); color: var(--text); width: 100%; }
+  #login button { font-weight: 600; padding: 14px; border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-ink); }
   #login p { color: var(--muted); margin: 0; }
-  svg { fill: currentColor; }
 </style>
 </head>
 <body class="locked">
+<div id="backdrop" class="backdrop"></div>
 
 <main id="login">
   <header><h1>HomeStream</h1></header>
-  <div class="card">
-    <form id="login-form">
-      <p>Open the link that <code>start-relay.sh</code> prints, or paste the token from your <code>.env</code>.</p>
-      <input id="token" type="password" autocomplete="current-password" placeholder="Token" required>
-      <button type="submit">Connect</button>
-    </form>
-  </div>
+  <form id="login-form">
+    <p>Open the link that <code>start-relay.sh</code> prints, or paste the token from your <code>.env</code>.</p>
+    <input id="token" type="password" autocomplete="current-password" placeholder="Token" required>
+    <button type="submit">Connect</button>
+  </form>
 </main>
 
 <main id="app">
@@ -139,40 +159,42 @@
     <div class="conn"><span id="conn-dot" class="dot"></span><span id="conn-text">Connecting…</span></div>
   </header>
 
-  <section class="card now" aria-live="polite">
-    <div id="art" class="art">
-      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
-    </div>
-    <div class="meta">
-      <div id="title" class="title">Nothing playing</div>
-      <div id="artist" class="artist">&nbsp;</div>
-      <span id="backend" class="chip">—</span>
-    </div>
-  </section>
-
-  <div class="listen-wrap">
-    <button id="listen" class="listen" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H5v-1a7 7 0 0 1 14 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"/></svg>
-      <span id="listen-label">Listen</span>
-      <span id="listen-sub" class="sub">on this phone</span>
-    </button>
+  <div id="art" class="art" role="img" aria-label="Album artwork">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
   </div>
 
-  <p class="label">Mac playback</p>
-  <section class="controls">
+  <section id="meta" class="meta" aria-live="polite">
+    <div id="title" class="title">Nothing playing</div>
+    <div id="artist" class="artist">Play something on your Mac</div>
+    <div id="source" class="source"></div>
+  </section>
+
+  <section id="progress" class="progress hidden" aria-hidden="true">
+    <div class="bar"><div id="fill" class="fill"></div></div>
+    <div class="times"><span id="elapsed">0:00</span><span id="remaining">-0:00</span></div>
+  </section>
+
+  <section class="transport" aria-label="Mac playback">
     <button class="ctl" data-cmd="prev" aria-label="Previous">
       <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 18V6z"/></svg>
     </button>
     <button id="playpause" class="ctl main" data-cmd="toggle" aria-label="Play or pause">
-      <svg viewBox="0 0 24 24"><path id="pp-icon" d="M3 5v14l9-7zM14 5h3v14h-3zM19 5h3v14h-3z"/></svg>
+      <svg viewBox="0 0 24 24"><path id="pp-icon" d="M8 5v14l11-7z"/></svg>
     </button>
     <button class="ctl" data-cmd="next" aria-label="Next">
       <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
     </button>
   </section>
 
+  <button id="listen" class="listen" aria-pressed="false">
+    <svg class="headphones" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H5v-1a7 7 0 0 1 14 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"/></svg>
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span id="listen-label">Listen on this phone</span>
+  </button>
+
   <footer>
     <div id="stream-info"></div>
+    <div id="debug"></div>
     <div class="footer-row">
       <button id="reconnect" class="link">Reconnect audio</button>
       <button id="logout" class="link">Forget token</button>
@@ -186,19 +208,17 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const audio = $("audio");
-const ICONS = {
-  play: "M8 5v14l11-7z",
-  pause: "M6 5h4v14H6zM14 5h4v14h-4z",
-  toggle: "M3 5v14l9-7zM14 5h3v14h-3zM19 5h3v14h-3z",
-};
+const ICONS = { play: "M8 5v14l11-7z", pause: "M6 5h4v14H6zM14 5h4v14h-4z" };
+const DEBUG = new URLSearchParams(location.search).has("debug");
+
+let status = null;            // last /status payload
 let wantListen = false;
-let retry = 0;
-let reconnectTimer = null;
-let lastTime = 0;
-let stuckSince = 0;
+let skipTimer = null;
 let lastTrackKey = "";
-let pollTimer = null;
-let switching = false; // true while we're swapping the stream URL ourselves
+let events = null;
+let expected = null;          // {state, until}: what the user just asked for
+let clockOffset = 0;          // server clock minus ours
+window.homestream = { delay: null, buffer: null };  // read by the test harness
 
 function toast(msg) {
   const t = $("toast");
@@ -216,7 +236,7 @@ async function api(path, method = "GET", body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401) {
-    document.body.classList.add("locked");
+    lock();
     throw new Error("unauthorized");
   }
   if (!res.ok) {
@@ -226,53 +246,110 @@ async function api(path, method = "GET", body) {
   return res.status === 204 ? null : res.json();
 }
 
+function lock() {
+  document.body.classList.add("locked");
+  events?.close();
+  events = null;
+}
+
 async function login(token) {
   await api("/auth", "POST", { token });
   document.body.classList.remove("locked");
-  refresh();
+  subscribe();
 }
 
-// ---- status -------------------------------------------------------------
+// ---- now playing ----------------------------------------------------------
 
 function setConn(ok, text) {
   $("conn-dot").className = "dot " + (ok ? "ok" : "bad");
   $("conn-text").textContent = text;
 }
 
-function render({ player, stream }) {
+function fmt(seconds) {
+  seconds = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function elapsedNow(p) {
+  if (p.elapsed == null) return null;
+  let e = p.elapsed;
+  if (p.state === "playing" && p.elapsed_at) e += Date.now() / 1000 - p.elapsed_at;
+  return p.duration ? Math.min(e, p.duration) : e;
+}
+
+function renderProgress() {
+  const p = status?.player;
+  const box = $("progress");
+  if (!p || !p.duration || p.elapsed == null) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const e = elapsedNow(p);
+  $("fill").style.width = `${(e / p.duration) * 100}%`;
+  $("elapsed").textContent = fmt(e);
+  $("remaining").textContent = "-" + fmt(p.duration - e);
+}
+
+// After a play/pause tap the server takes a moment to report the new state.
+// Until it does (or 3 s pass), keep showing what was asked for, so the button
+// doesn't flip back and forth.
+function applyExpectation(p) {
+  if (!expected) return;
+  if (p.state === expected.state || Date.now() > expected.until) expected = null;
+  else p.state = expected.state;
+}
+
+function render(data) {
+  status = data;
+  const { player: p, stream: s } = data;
+  applyExpectation(p);
   setConn(true, "Mac online");
-  const playing = player.state === "playing";
-  const paused = player.state === "paused" || player.state === "stopped";
-  $("pp-icon").setAttribute("d", playing ? ICONS.pause : paused ? ICONS.play : ICONS.toggle);
-  $("title").textContent = player.title || (player.backend === "browser" ? "Browser audio" : "Nothing playing");
-  $("artist").textContent = player.artist || (player.backend === "browser" ? "Track info isn't available for browsers" : " ");
-  $("backend").textContent = {
-    spotify: "Spotify app",
-    browser: "Browser · media keys",
-    dryrun: "Dry run",
-  }[player.backend] || player.backend;
+
+  const playing = p.state === "playing";
+  document.body.classList.toggle("paused", p.state === "paused");
+  $("pp-icon").setAttribute("d", playing ? ICONS.pause : ICONS.play);
+
+  const idle = !p.title;
+  $("title").textContent = p.title || (p.backend === "browser" ? "Browser audio" : "Nothing playing");
+  $("artist").textContent = p.artist || (idle ? "Play something on your Mac" : "");
+  $("source").textContent = p.app ? `Playing in ${p.app}` : "";
+
+  const trackKey = `${p.title}|${p.artist}`;
+  if (trackKey !== lastTrackKey) {
+    $("meta").classList.remove("skipping");
+    clearTimeout(skipTimer);
+  }
 
   const art = $("art");
-  art.style.backgroundImage = player.artwork ? `url("${player.artwork}")` : "";
-  art.classList.toggle("has-img", !!player.artwork);
-
-  const info = $("stream-info");
-  const warnings = [player.warning, stream.error && `Mac audio: ${stream.error}`].filter(Boolean);
-  info.className = warnings.length ? "warn" : "";
-  info.textContent = warnings.length
-    ? warnings.join(" · ")
-    : `${stream.device} · ${stream.bitrate} · ${stream.listeners} listening`;
-
-  const key = `${player.title}|${player.artist}`;
-  if ("mediaSession" in navigator && key !== lastTrackKey) {
-    lastTrackKey = key;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: player.title || "HomeStream",
-      artist: player.artist || "Live from your Mac",
-      album: player.album || "",
-      artwork: player.artwork ? [{ src: player.artwork, sizes: "640x640" }] : [],
-    });
+  const artUrl = p.artwork ? `url("${p.artwork}")` : "";
+  if (art.style.backgroundImage !== artUrl) {
+    art.style.backgroundImage = artUrl;
+    $("backdrop").style.backgroundImage = artUrl;
   }
+  art.classList.toggle("has-img", !!p.artwork);
+  $("backdrop").classList.toggle("on", !!p.artwork);
+  renderProgress();
+
+  const warnings = [p.warning, s.error && `Mac audio: ${s.error}`].filter(Boolean);
+  $("stream-info").className = warnings.length ? "warn" : "";
+  $("stream-info").textContent = warnings.join(" · ");
+
+  if ("mediaSession" in navigator) {
+    if (trackKey !== lastTrackKey) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: p.title || "HomeStream",
+        artist: p.artist || "Live from your Mac",
+        album: p.album || "",
+        artwork: p.artwork ? [{ src: new URL(p.artwork, location.href).href, sizes: "512x512" }] : [],
+      });
+    }
+    try {
+      if (p.duration && p.elapsed != null) {
+        navigator.mediaSession.setPositionState({
+          duration: p.duration, position: elapsedNow(p), playbackRate: playing ? 1 : 0.0001,
+        });
+      }
+    } catch {}
+  }
+  lastTrackKey = trackKey;
 }
 
 async function refresh() {
@@ -283,118 +360,387 @@ async function refresh() {
   }
 }
 
-function schedulePoll() {
-  clearInterval(pollTimer);
-  // Slower in the background: it only keeps lock-screen track info fresh.
-  pollTimer = setInterval(refresh, document.hidden ? 10000 : 3000);
+// Live updates: the server pushes the status the moment anything changes.
+function subscribe() {
+  events?.close();
+  events = new EventSource("/events");
+  events.onmessage = (e) => render(JSON.parse(e.data));
+  events.onerror = () => { setConn(false, "Reconnecting…"); refresh(); };
 }
+// Fallback for when the event stream is suspended (e.g. a locked phone).
+setInterval(() => {
+  if (!document.body.classList.contains("locked") && events?.readyState !== EventSource.OPEN) refresh();
+}, 10000);
+setInterval(renderProgress, 500);
 
-// ---- Mac playback -------------------------------------------------------
+// ---- Mac playback ---------------------------------------------------------
 
 async function send(cmd) {
   navigator.vibrate?.(10);
+  const p = status?.player;
+  if (p && ["toggle", "play", "pause"].includes(cmd) && (p.state === "playing" || p.state === "paused")) {
+    // Show the new state right away; the server confirms a moment later.
+    const target = cmd === "toggle" ? (p.state === "playing" ? "paused" : "playing") : (cmd === "play" ? "playing" : "paused");
+    p.elapsed = elapsedNow(p); p.elapsed_at = Date.now() / 1000;
+    expected = { state: target, until: Date.now() + 3000 };
+    render(status);
+  }
+  if (cmd === "next" || cmd === "prev") {
+    $("meta").classList.add("skipping");
+    clearTimeout(skipTimer);
+    skipTimer = setTimeout(() => $("meta").classList.remove("skipping"), 4000);
+  }
   try {
     await api(`/${cmd}`, "POST");
   } catch (e) {
+    $("meta").classList.remove("skipping");
     if (e.message !== "unauthorized") toast(e.message);
   }
-  setTimeout(refresh, 400);
+  if (events?.readyState !== EventSource.OPEN) setTimeout(refresh, 500);
 }
 
 document.querySelectorAll(".ctl").forEach((b) => b.addEventListener("click", () => send(b.dataset.cmd)));
 
-// ---- listening ----------------------------------------------------------
+// ---- listening ------------------------------------------------------------
+//
+// Two ways to play the stream:
+//  * MSE (Media Source Extensions; ManagedMediaSource on iPhone): the page fetches the
+//    MP3 stream itself and feeds whole frames to the <audio> element, so the page, not
+//    the browser, decides how much to buffer: about half a second, where iPhone Safari
+//    on its own waits for ~5 s. A dropped connection only restarts the fetch while the
+//    element keeps playing, which matters because a locked iPhone won't let a page
+//    start a new player.
+//  * A plain <audio src=stream>, for browsers without MSE. Simple, but seconds behind.
+
+const MediaSourceClass = window.ManagedMediaSource || window.MediaSource;
+const USE_MSE = !!MediaSourceClass?.isTypeSupported?.("audio/mpeg") && !new URLSearchParams(location.search).has("progressive");
+const AHEAD = { visible: 0.5, hidden: 2.0 }; // seconds buffered beyond what's playing
+const STALL_MS = 4000;                       // no data for this long: reconnect
+
+const newId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Length in bytes and duration in seconds of the MP3 (Layer III) frame starting at b[i].
+function mp3Frame(b, i) {
+  if (b[i] !== 0xff || (b[i + 1] & 0xe0) !== 0xe0) return null;
+  const version = (b[i + 1] >> 3) & 3, layer = (b[i + 1] >> 1) & 3;
+  const bitrateIndex = b[i + 2] >> 4, rateIndex = (b[i + 2] >> 2) & 3, padding = (b[i + 2] >> 1) & 1;
+  if (version === 1 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return null;
+  const kbps = (version === 3 ? [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+    : [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160])[bitrateIndex - 1];
+  const rate = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] }[version][rateIndex];
+  const samples = version === 3 ? 1152 : 576;
+  return { length: Math.floor((samples / 8) * kbps * 1000 / rate) + padding, seconds: samples / rate };
+}
+
+// Split bytes into whole frames and the incomplete tail that must wait for more data.
+function splitFrames(buf) {
+  let i = 0, start = -1, end = 0, seconds = 0;
+  while (buf.length - i >= 4) {
+    const f = mp3Frame(buf, i);
+    if (!f) { i++; continue; }
+    if (buf.length - i < f.length) break;
+    if (start < 0) start = i;
+    seconds += f.seconds;
+    i += f.length;
+    end = i;
+  }
+  return { frames: start < 0 ? null : buf.subarray(start, end), rest: buf.slice(Math.max(end, i)), seconds };
+}
+
+function concat(chunks) {
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+class MseStream {
+  constructor(el) {
+    this.el = el;
+    this.active = this.wantData = this.fetching = false;
+    this.segments = [];
+    this.resumedAt = null;
+  }
+
+  // Call from a tap: iOS only lets play() start inside the user's gesture.
+  start() {
+    this.active = this.wantData = true;
+    this.queue = [];
+    this.appended = 0;    // seconds of audio handed to the element so far
+    this.segments = [];   // where each connection's audio starts on the element's timeline
+    this.lastData = Date.now();
+    this.ms = new MediaSourceClass();
+    if (window.ManagedMediaSource) this.el.disableRemotePlayback = true; // required for ManagedMediaSource
+    this.url = URL.createObjectURL(this.ms);
+    this.el.src = this.url;
+    this.ms.addEventListener("sourceopen", () => {
+      this.sb = this.ms.addSourceBuffer("audio/mpeg");
+      this.sb.mode = "sequence";
+      this.sb.addEventListener("updateend", () => this.flush());
+      this.fetchLoop();
+    }, { once: true });
+    return this.el.play();
+  }
+
+  stop() {
+    this.active = this.wantData = false;
+    this.abort?.abort();
+    this.el.pause();
+    this.el.removeAttribute("src");
+    this.el.load();
+    if (this.url) URL.revokeObjectURL(this.url);
+    this.sb = this.ms = this.url = null;
+  }
+
+  // Paused from the lock screen etc.: stop downloading but keep the player.
+  pause() { this.wantData = false; this.abort?.abort(); }
+
+  // Carry on with the same player, from the live edge.
+  resume() {
+    this.wantData = true;
+    this.resumedAt = this.appended; // once fresh audio arrives, skip what went stale while paused
+    this.fetchLoop();
+    return this.el.play();
+  }
+
+  async fetchLoop() {
+    if (this.fetching) return;
+    this.fetching = true;
+    let retry = 0;
+    while (this.active && this.wantData) {
+      const id = newId();
+      this.abort = new AbortController();
+      try {
+        const res = await fetch(`/stream.mp3?id=${id}`, { signal: this.abort.signal, cache: "no-store", credentials: "same-origin" });
+        if (res.status === 401) { lock(); break; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        let pending = new Uint8Array(0);
+        let first = true;
+        this.lastData = Date.now();
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          this.lastData = Date.now();
+          const { frames, rest, seconds } = splitFrames(concat([pending, value]));
+          pending = rest;
+          if (!frames) continue;
+          if (first) {
+            this.segments.push({ at: this.appended, id });
+            this.segments = this.segments.slice(-10);
+            first = false;
+            retry = 0;
+          }
+          this.appended += seconds;
+          this.queue.push(frames.slice());
+          this.flush();
+        }
+      } catch { /* aborted, or the network dropped */ }
+      if (!this.active || !this.wantData) break;
+      await sleep(Math.min(500 * 2 ** retry++, 8000));
+    }
+    this.fetching = false;
+  }
+
+  flush() {
+    const sb = this.sb;
+    if (!sb || sb.updating || !this.queue.length || this.ms?.readyState !== "open") return;
+    const data = concat(this.queue);
+    this.queue = [];
+    try {
+      sb.appendBuffer(data);
+    } catch (e) {
+      if (e.name === "QuotaExceededError" && this.el.buffered.length) {
+        sb.remove(0, Math.max(0, this.el.currentTime - 1)); // flush runs again on updateend
+        this.queue.unshift(data);
+      }
+    }
+  }
+
+  // Jump to `target` seconds behind the newest audio once we've drifted `margin` past it.
+  // The margin keeps tiny network wobbles from causing a skip every few seconds.
+  skipToLive(margin = 0.3) {
+    const el = this.el;
+    if (!el.buffered.length) return;
+    const end = el.buffered.end(el.buffered.length - 1);
+    const target = document.hidden ? AHEAD.hidden : AHEAD.visible;
+    if (end - el.currentTime > target + margin) el.currentTime = end - target;
+  }
+
+  tick() {
+    if (!this.active || !this.sb) return;
+    if (this.wantData && Date.now() - this.lastData > STALL_MS) {
+      this.lastData = Date.now();
+      this.abort?.abort(); // fetchLoop reconnects; the element keeps playing
+    }
+    const el = this.el;
+    if (el.paused || !el.buffered.length) return;
+    if (this.resumedAt != null && this.appended > this.resumedAt + AHEAD.visible) {
+      this.resumedAt = null;
+      this.skipToLive(0.05);
+    } else {
+      this.skipToLive();
+    }
+    // Drop audio that's already been played, so long sessions don't pile up memory.
+    const start = el.buffered.start(0);
+    if (!this.sb.updating && el.currentTime - start > 30) this.sb.remove(start, el.currentTime - 5);
+  }
+
+  // Which connection the audio playing now came from, and how far into it we are.
+  position() {
+    const t = this.el.currentTime;
+    const seg = this.segments.findLast((s) => s.at <= t);
+    return seg ? { id: seg.id, offset: t - seg.at } : null;
+  }
+}
+
+class ProgressiveStream {
+  constructor(el) { this.el = el; this.active = false; this.switching = false; }
+
+  start() { this.active = true; return this.connect(); }
+
+  connect() {
+    this.switching = true;
+    // A fresh URL every time, so playback starts at the live edge rather than from a stale buffer.
+    this.id = newId();
+    this.lastTime = 0;
+    this.stuckSince = Date.now();
+    this.el.src = `/stream.mp3?id=${this.id}`;
+    return this.el.play();
+  }
+
+  stop() {
+    this.active = false;
+    this.el.pause();
+    this.el.removeAttribute("src");
+    this.el.load();
+  }
+
+  pause() {}
+  resume() { return this.connect(); }
+
+  tick() {
+    // Cellular hand-offs can leave the stream silently stuck: reconnect if playback stops
+    // advancing. Only while the page is visible; a locked iPhone won't start a new stream.
+    if (!this.active || this.el.paused || document.hidden) return;
+    if (this.el.currentTime > this.lastTime) {
+      this.lastTime = this.el.currentTime;
+      this.stuckSince = Date.now();
+    } else if (Date.now() - this.stuckSince > 15000) {
+      this.connect().catch(() => {});
+    }
+  }
+
+  position() { return this.id ? { id: this.id, offset: this.el.currentTime } : null; }
+}
+
+const engine = USE_MSE ? new MseStream(audio) : new ProgressiveStream(audio);
+setInterval(() => engine.tick(), 250);
 
 function setListenUI(state) {
   const btn = $("listen");
   btn.classList.toggle("live", state === "live");
   btn.classList.toggle("connecting", state === "connecting");
   btn.setAttribute("aria-pressed", String(state !== "off"));
-  $("listen-label").textContent = { off: "Listen", connecting: "Connecting", live: "Live" }[state];
-  $("listen-sub").textContent = { off: "on this phone", connecting: "buffering…", live: "tap to stop" }[state];
+  $("listen-label").textContent = {
+    off: "Listen on this phone", connecting: "Connecting…", live: "Live · tap to stop",
+  }[state];
+  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = state === "off" ? "paused" : "playing";
 }
 
-function connect() {
-  clearTimeout(reconnectTimer);
-  setListenUI("connecting");
-  switching = true;
-  // A fresh URL every time so playback resumes at the live edge, not from a stale buffer.
-  audio.src = `/stream.mp3?t=${Date.now()}`;
-  lastTime = 0;
-  stuckSince = Date.now();
-  audio.play().catch((e) => {
-    if (e.name === "NotAllowedError") {
-      wantListen = false;
-      setListenUI("off");
-      toast("Tap Listen to start audio");
-    } else {
-      scheduleReconnect(); // e.g. AbortError when the browser interrupts the load
-    }
-  });
+function handlePlayFailure(e) {
+  if (e.name === "NotAllowedError") {
+    stopListening();
+    toast("Tap Listen to start audio");
+  }
 }
 
 function startListening() {
   wantListen = true;
-  retry = 0;
-  connect();
+  setListenUI("connecting");
+  // After a pause from the lock screen the player still exists: carry on with it.
+  (engine.active ? engine.resume() : engine.start()).catch(handlePlayFailure);
 }
 
 function stopListening() {
   wantListen = false;
-  clearTimeout(reconnectTimer);
-  audio.pause();
-  audio.removeAttribute("src");
-  audio.load();
+  engine.stop();
   setListenUI("off");
 }
 
-function scheduleReconnect() {
-  if (!wantListen) return;
-  clearTimeout(reconnectTimer);
-  const delay = Math.min(1000 * 2 ** retry, 15000);
-  retry++;
-  setListenUI("connecting");
-  reconnectTimer = setTimeout(connect, delay);
-}
-
-audio.addEventListener("playing", () => { switching = false; retry = 0; setListenUI("live"); });
-// The OS paused us (headphones unplugged, a call came in): reflect it instead of showing "Live".
-audio.addEventListener("pause", () => { if (wantListen && !switching) stopListening(); });
-audio.addEventListener("error", scheduleReconnect);
-audio.addEventListener("ended", scheduleReconnect);
-
-// Cellular hand-offs can leave the stream silently stuck; reconnect if playback stops advancing.
-// (A pause we didn't ask for already turned wantListen off, so paused here also means stuck.)
-setInterval(() => {
-  if (!wantListen) return;
-  if (!audio.paused && audio.currentTime > lastTime) {
-    lastTime = audio.currentTime;
-    stuckSince = Date.now();
-  } else if (Date.now() - stuckSince > 15000) {
-    scheduleReconnect();
-    stuckSince = Date.now();
+audio.addEventListener("playing", () => {
+  engine.switching = false;
+  if (wantListen) setListenUI("live");
+});
+audio.addEventListener("waiting", () => { if (wantListen) setListenUI("connecting"); });
+// Paused from outside the page (lock screen, headphones unplugged, a call): show it and stop
+// downloading, but keep the player, so play from the lock screen can carry on.
+audio.addEventListener("pause", () => {
+  if (wantListen && !engine.switching) {
+    wantListen = false;
+    engine.pause();
+    setListenUI("off");
   }
-}, 2000);
+});
+audio.addEventListener("error", () => {
+  if (wantListen && !USE_MSE && !document.hidden) setTimeout(() => engine.connect().catch(() => {}), 1000);
+});
+
+// Measure the real delay: the server says when the first audio of a connection was
+// captured, so (now - captured - how far into that connection we are) is the delay.
+let streamInfo = null;
+async function updateStreamInfo() {
+  const pos = engine.position();
+  if (!wantListen || !pos || audio.paused) return;
+  try {
+    const sent = Date.now();
+    // Our last measurement rides along, so test runs can read it from the server log.
+    const d = window.homestream.delay;
+    const info = await api(`/stream-info?id=${pos.id}${d == null ? "" : `&delay=${d.toFixed(2)}`}`);
+    const received = Date.now();
+    clockOffset = info.now * 1000 - (sent + received) / 2;
+    streamInfo = { ...info, id: pos.id };
+  } catch { streamInfo = null; }
+}
+setInterval(updateStreamInfo, 2000);
+setInterval(() => {
+  const h = window.homestream;
+  const pos = engine.position();
+  h.buffer = audio.buffered.length ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime : null;
+  h.delay = streamInfo?.started_at && pos && pos.id === streamInfo.id && !audio.paused
+    ? (Date.now() + clockOffset) / 1000 - (streamInfo.started_at + streamInfo.dropped_seconds + pos.offset)
+    : null;
+  if (DEBUG) {
+    $("debug").textContent = `${USE_MSE ? "mse" : "progressive"} · delay ${h.delay?.toFixed(2) ?? "–"}s` +
+      ` · buffered ${h.buffer?.toFixed(2) ?? "–"}s`;
+  }
+}, 500);
 
 $("listen").addEventListener("click", () => (wantListen ? stopListening() : startListening()));
-$("reconnect").addEventListener("click", () => (wantListen ? connect() : startListening()));
+$("reconnect").addEventListener("click", () => { stopListening(); startListening(); });
 $("logout").addEventListener("click", async () => {
   stopListening();
   await api("/logout", "POST").catch(() => {});
-  document.body.classList.add("locked");
+  lock();
 });
 
-// Lock-screen / headphone controls drive the Mac. Pausing also drops the stream
-// (saves data); playing reconnects at the live edge.
+// Lock-screen and headphone controls drive the Mac too.
 if ("mediaSession" in navigator) {
   const ms = navigator.mediaSession;
   ms.setActionHandler("play", () => { send("play"); startListening(); });
-  ms.setActionHandler("pause", () => { send("pause"); stopListening(); });
+  ms.setActionHandler("pause", () => {
+    send("pause");
+    wantListen = false;
+    audio.pause();
+    engine.pause();
+    setListenUI("off");
+  });
   ms.setActionHandler("nexttrack", () => send("next"));
   ms.setActionHandler("previoustrack", () => send("prev"));
 }
 
-// ---- boot ---------------------------------------------------------------
+// ---- boot -----------------------------------------------------------------
 
 $("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -405,28 +751,39 @@ $("login-form").addEventListener("submit", async (e) => {
   }
 });
 
+// Hidden pages drop their live-update connection: it saves battery, and Safari allows only
+// six connections per server, which a few forgotten tabs would otherwise use up. While
+// hidden, a slow poll keeps the lock screen's track info current.
 document.addEventListener("visibilitychange", () => {
-  schedulePoll();
-  if (!document.hidden) refresh();
+  if (document.body.classList.contains("locked")) return;
+  if (document.hidden) {
+    events?.close();
+    events = null;
+  } else {
+    refresh();
+    subscribe();
+  }
 });
 
 // Pairing links look like http://<mac>:8765/#token=... — the fragment never reaches the server or its logs.
 async function consumePairingLink() {
   const m = location.hash.match(/token=([^&]+)/);
   if (!m) return;
-  history.replaceState(null, "", location.pathname);
+  history.replaceState(null, "", location.pathname + location.search);
   try { await login(decodeURIComponent(m[1])); } catch { toast("That pairing link's token didn't work"); }
 }
 // Opening the link while the page is already open only changes the fragment.
 window.addEventListener("hashchange", consumePairingLink);
+
+if (DEBUG) $("debug").style.display = "block";
 
 (async () => {
   await consumePairingLink();
   try {
     render(await api("/status"));
     document.body.classList.remove("locked");
+    subscribe();
   } catch {}
-  schedulePoll();
 })();
 </script>
 </body>

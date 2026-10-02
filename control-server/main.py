@@ -8,9 +8,11 @@ an "Authorization: Bearer <token>" header or as the cookie set by POST /auth.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -49,14 +51,21 @@ PORT = int(os.environ.get("HOMESTREAM_PORT", "8765"))
 audio = AudioBroadcaster(
     device=os.environ.get("HOMESTREAM_AUDIO_DEVICE", "BlackHole 2ch"),
     bitrate=os.environ.get("HOMESTREAM_BITRATE", "192k"),
+    prebuffer=float(os.environ.get("HOMESTREAM_PREBUFFER", "1.0")),
 )
 player = make_controller(os.environ.get("HOMESTREAM_PLAYER", "auto"))
+# Set when the server is asked to quit, so long-lived responses can finish.
+shutting_down = asyncio.Event()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if hasattr(player, "start"):
+        await player.start()
     yield
     await audio.close()
+    if hasattr(player, "close"):
+        await player.close()
 
 
 app = FastAPI(title="HomeStream", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -102,9 +111,55 @@ async def logout(response: Response):
     response.delete_cookie(COOKIE)
 
 
+async def current_status() -> dict:
+    return {"player": (await player.status()).to_dict(), "stream": audio.status()}
+
+
 @app.get("/status", dependencies=authed)
 async def status():
-    return {"player": (await player.status()).to_dict(), "stream": audio.status()}
+    return await current_status()
+
+
+async def wait_for_change(timeout: float) -> None:
+    """Return when the player reports a change, on shutdown, or after `timeout`."""
+    waiters = [asyncio.create_task(shutting_down.wait())]
+    if hasattr(player, "wait_changed"):
+        waiters.append(asyncio.create_task(player.wait_changed()))
+    _, pending = await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+
+
+@app.get("/events", dependencies=authed)
+async def events():
+    """Server-sent events: the same JSON as /status, pushed whenever it changes."""
+
+    async def stream():
+        last, last_sent = None, 0.0
+        loop = asyncio.get_running_loop()
+        while not shutting_down.is_set():
+            payload = json.dumps(await current_status(), separators=(",", ":"))
+            if payload != last:
+                yield f"data: {payload}\n\n"
+                last, last_sent = payload, loop.time()
+            elif loop.time() - last_sent > 15:
+                yield ": keep-alive\n\n"
+                last_sent = loop.time()
+            await wait_for_change(timeout=1.0)
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
+@app.get("/artwork", dependencies=authed)
+async def artwork():
+    art = getattr(player, "artwork", None)
+    if not art:
+        raise HTTPException(404, "no artwork")
+    mime, data = art
+    # The URL carries a version (?v=...), so each image can be cached for good.
+    return Response(data, media_type=mime, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 def command_route(cmd: str):
@@ -123,12 +178,21 @@ for _cmd in COMMANDS:
 
 
 @app.get("/stream.mp3", dependencies=authed)
-async def stream():
+async def stream(id: str | None = None):
     return StreamingResponse(
-        audio.listen(),
+        audio.listen(id),
         media_type="audio/mpeg",
         headers={"Cache-Control": "no-cache, no-store", "X-Content-Type-Options": "nosniff"},
     )
+
+
+@app.get("/stream-info", dependencies=authed)
+async def stream_info(id: str, delay: float | None = None):  # delay: the page's own measurement, for logs
+    """When this listener's audio was captured, so the page can measure its delay."""
+    info = audio.listener_info(id)
+    if info is None:
+        raise HTTPException(404, "no such listener")
+    return {**info, "now": time.time()}
 
 
 def main() -> None:
@@ -138,10 +202,12 @@ def main() -> None:
     if len(TOKEN) < 16:
         raise SystemExit("Set HOMESTREAM_TOKEN (16+ chars) in .env — setup.sh generates one.")
     class Server(uvicorn.Server):
-        # Audio streams never end on their own; close them when asked to quit
-        # instead of letting uvicorn wait on them.
+        # Audio streams and event streams never end on their own; close them
+        # when asked to quit instead of letting uvicorn wait on them.
         def handle_exit(self, sig, frame):
-            asyncio.get_event_loop().call_soon_threadsafe(audio.end_streams)
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(audio.end_streams)
+            loop.call_soon_threadsafe(shutting_down.set)
             super().handle_exit(sig, frame)
 
     config = uvicorn.Config(app, host=HOST, port=PORT, log_level="info", timeout_graceful_shutdown=3)

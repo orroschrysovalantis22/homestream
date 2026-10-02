@@ -12,12 +12,11 @@ from __future__ import annotations
 import array
 import os
 import re
-import shutil
 import subprocess
 import sys
 
-from audio_stream import TEST_TONE
-from mac_control import accessibility_trusted
+from audio_stream import CAPTURE_SCRIPT, TEST_SIGNAL, TEST_TONE
+from mac_control import accessibility_trusted, media_control_path
 
 CAPTURE_TIMEOUT = 90  # long enough to read and answer the permission dialog
 SILENCE_PEAK = 30  # of 32767
@@ -38,15 +37,12 @@ def fail(msg: str) -> None:
 
 
 def check_capture(device: str) -> bool:
-    if device == TEST_TONE:
-        ok("audio source: test tone")
+    if device in (TEST_TONE, TEST_SIGNAL):
+        ok(f"audio source: {device}")
         return True
     print(f"  … test-recording 1 s from {device!r}. If macOS asks to let your terminal")
     print("    use the microphone, click Allow: that's how the relay hears BlackHole.")
-    cmd = [
-        shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-        "-f", "avfoundation", "-i", f":{device}", "-t", "1", "-ac", "1", "-f", "s16le", "pipe:1",
-    ]
+    cmd = [sys.executable, str(CAPTURE_SCRIPT), "--seconds", "1", device]
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=CAPTURE_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -73,6 +69,9 @@ def check_capture(device: str) -> bool:
 
 
 def check_accessibility(player: str) -> None:
+    if player in ("auto", "nowplaying") and media_control_path():
+        ok("controls via macOS Now Playing (media-control): works with any player")
+        return
     if player not in ("auto", "browser"):
         return
     if accessibility_trusted():
@@ -86,7 +85,7 @@ def check_accessibility(player: str) -> None:
 
 
 def check_spotify(player: str) -> None:
-    if player not in ("auto", "spotify"):
+    if player != "spotify" and not (player == "auto" and not media_control_path()):
         return
     running = subprocess.run(["pgrep", "-xq", "Spotify"]).returncode == 0
     if not running:

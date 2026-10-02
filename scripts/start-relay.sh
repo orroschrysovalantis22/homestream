@@ -43,8 +43,8 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 # --- 1. Audio routing -------------------------------------------------------
-if [[ "$DEVICE" != "test-tone" ]]; then
-  if ! ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | grep -qF "] $DEVICE"; then
+if [[ "$DEVICE" != test-tone && "$DEVICE" != test-signal ]]; then
+  if ! "$PY" control-server/capture.py --info "$DEVICE" >/dev/null 2>&1; then
     die "audio device '$DEVICE' not found. Install BlackHole with ./setup.sh (a reboot may be needed afterwards) or set HOMESTREAM_AUDIO_DEVICE in .env"
   fi
   if [[ "${HOMESTREAM_AUTO_ROUTE:-1}" == 1 ]] && command -v SwitchAudioSource >/dev/null; then
