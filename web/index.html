@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HomeStream">
+<meta name="theme-color" content="#0e0f12">
+<title>HomeStream</title>
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<style>
+  :root {
+    --bg: #f4f4f1;
+    --surface: #ffffff;
+    --surface-2: #e9e9e4;
+    --text: #15161a;
+    --muted: #6b6d75;
+    --accent: #1f9d6a;
+    --accent-ink: #ffffff;
+    --danger: #c2412d;
+    --ring: color-mix(in srgb, var(--accent) 35%, transparent);
+    --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .06);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0f12;
+      --surface: #17191e;
+      --surface-2: #22252c;
+      --text: #f2f2ee;
+      --muted: #9a9ca5;
+      --accent: #3ddc97;
+      --accent-ink: #06210f;
+      --danger: #ff7a62;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+  }
+  main { max-width: 440px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; gap: 20px; padding: 16px 0 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 18px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  .conn { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--accent); }
+  .dot.bad { background: var(--danger); }
+
+  .card { background: var(--surface); border-radius: 20px; padding: 16px; box-shadow: var(--shadow); }
+  .now { display: grid; grid-template-columns: 72px 1fr; gap: 14px; align-items: center; }
+  .art {
+    width: 72px; height: 72px; border-radius: 12px; background: var(--surface-2) center/cover no-repeat;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .art.has-img svg { display: none; }
+  .meta { min-width: 0; }
+  .title { font-weight: 620; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 99px; padding: 2px 9px; }
+
+  .listen-wrap { display: grid; place-items: center; padding: 8px 0; }
+  .listen {
+    width: 168px; height: 168px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--surface); color: var(--text); box-shadow: var(--shadow), inset 0 0 0 2px var(--surface-2);
+    display: grid; place-items: center; align-content: center; gap: 6px; font: inherit; font-weight: 600;
+    transition: transform .12s ease, background .2s ease;
+  }
+  .listen:active { transform: scale(.96); }
+  .listen svg { width: 44px; height: 44px; }
+  .listen .sub { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .listen.live { background: var(--accent); color: var(--accent-ink); animation: pulse 2.4s ease-out infinite; }
+  .listen.live .sub { color: inherit; opacity: .75; }
+  .listen.connecting { box-shadow: inset 0 0 0 3px var(--accent); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--ring); } 70%, 100% { box-shadow: 0 0 0 22px transparent; } }
+
+  .controls { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 12px; }
+  .ctl {
+    height: 76px; border: 0; border-radius: 20px; cursor: pointer; font: inherit;
+    background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+    display: grid; place-items: center; transition: transform .1s ease, background .15s ease;
+  }
+  .ctl:active { transform: scale(.95); background: var(--surface-2); }
+  .ctl svg { width: 30px; height: 30px; }
+  .ctl.main svg { width: 38px; height: 38px; }
+  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 -8px 4px; }
+
+  footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--muted); }
+  .footer-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .link { background: none; border: 0; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; padding: 6px 0; }
+  .warn { color: var(--danger); }
+
+  .toast {
+    position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto;
+    background: var(--text); color: var(--bg); border-radius: 14px; padding: 12px 14px; font-size: 14px;
+    opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: none; }
+
+  #login { display: none; }
+  body.locked #login { display: flex; }
+  body.locked #app { display: none; }
+  #login form { display: flex; flex-direction: column; gap: 12px; }
+  #login input {
+    font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--surface-2);
+    background: var(--surface); color: var(--text); width: 100%;
+  }
+  #login button { font: inherit; font-weight: 600; padding: 14px; border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-ink); }
+  #login p { color: var(--muted); margin: 0; }
+  svg { fill: currentColor; }
+</style>
+</head>
+<body class="locked">
+
+<main id="login">
+  <header><h1>HomeStream</h1></header>
+  <div class="card">
+    <form id="login-form">
+      <p>Open the link that <code>start-relay.sh</code> prints, or paste the token from your <code>.env</code>.</p>
+      <input id="token" type="password" autocomplete="current-password" placeholder="Token" required>
+      <button type="submit">Connect</button>
+    </form>
+  </div>
+</main>
+
+<main id="app">
+  <header>
+    <h1>HomeStream</h1>
+    <div class="conn"><span id="conn-dot" class="dot"></span><span id="conn-text">Connecting…</span></div>
+  </header>
+
+  <section class="card now" aria-live="polite">
+    <div id="art" class="art">
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+    </div>
+    <div class="meta">
+      <div id="title" class="title">Nothing playing</div>
+      <div id="artist" class="artist">&nbsp;</div>
+      <span id="backend" class="chip">—</span>
+    </div>
+  </section>
+
+  <div class="listen-wrap">
+    <button id="listen" class="listen" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H5v-1a7 7 0 0 1 14 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"/></svg>
+      <span id="listen-label">Listen</span>
+      <span id="listen-sub" class="sub">on this phone</span>
+    </button>
+  </div>
+
+  <p class="label">Mac playback</p>
+  <section class="controls">
+    <button class="ctl" data-cmd="prev" aria-label="Previous">
+      <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 18V6z"/></svg>
+    </button>
+    <button id="playpause" class="ctl main" data-cmd="toggle" aria-label="Play or pause">
+      <svg viewBox="0 0 24 24"><path id="pp-icon" d="M3 5v14l9-7zM14 5h3v14h-3zM19 5h3v14h-3z"/></svg>
+    </button>
+    <button class="ctl" data-cmd="next" aria-label="Next">
+      <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+    </button>
+  </section>
+
+  <footer>
+    <div id="stream-info"></div>
+    <div class="footer-row">
+      <button id="reconnect" class="link">Reconnect audio</button>
+      <button id="logout" class="link">Forget token</button>
+    </div>
+  </footer>
+</main>
+
+<div id="toast" class="toast" role="status"></div>
+<audio id="audio" preload="none"></audio>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const audio = $("audio");
+const ICONS = {
+  play: "M8 5v14l11-7z",
+  pause: "M6 5h4v14H6zM14 5h4v14h-4z",
+  toggle: "M3 5v14l9-7zM14 5h3v14h-3zM19 5h3v14h-3z",
+};
+let wantListen = false;
+let retry = 0;
+let reconnectTimer = null;
+let lastTime = 0;
+let stuckSince = 0;
+let lastTrackKey = "";
+let pollTimer = null;
+let switching = false; // true while we're swapping the stream URL ourselves
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    document.body.classList.add("locked");
+    throw new Error("unauthorized");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+async function login(token) {
+  await api("/auth", "POST", { token });
+  document.body.classList.remove("locked");
+  refresh();
+}
+
+// ---- status -------------------------------------------------------------
+
+function setConn(ok, text) {
+  $("conn-dot").className = "dot " + (ok ? "ok" : "bad");
+  $("conn-text").textContent = text;
+}
+
+function render({ player, stream }) {
+  setConn(true, "Mac online");
+  const playing = player.state === "playing";
+  const paused = player.state === "paused" || player.state === "stopped";
+  $("pp-icon").setAttribute("d", playing ? ICONS.pause : paused ? ICONS.play : ICONS.toggle);
+  $("title").textContent = player.title || (player.backend === "browser" ? "Browser audio" : "Nothing playing");
+  $("artist").textContent = player.artist || (player.backend === "browser" ? "Track info isn't available for browsers" : " ");
+  $("backend").textContent = {
+    spotify: "Spotify app",
+    browser: "Browser · media keys",
+    dryrun: "Dry run",
+  }[player.backend] || player.backend;
+
+  const art = $("art");
+  art.style.backgroundImage = player.artwork ? `url("${player.artwork}")` : "";
+  art.classList.toggle("has-img", !!player.artwork);
+
+  const info = $("stream-info");
+  const warnings = [player.warning, stream.error && `Mac audio: ${stream.error}`].filter(Boolean);
+  info.className = warnings.length ? "warn" : "";
+  info.textContent = warnings.length
+    ? warnings.join(" · ")
+    : `${stream.device} · ${stream.bitrate} · ${stream.listeners} listening`;
+
+  const key = `${player.title}|${player.artist}`;
+  if ("mediaSession" in navigator && key !== lastTrackKey) {
+    lastTrackKey = key;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: player.title || "HomeStream",
+      artist: player.artist || "Live from your Mac",
+      album: player.album || "",
+      artwork: player.artwork ? [{ src: player.artwork, sizes: "640x640" }] : [],
+    });
+  }
+}
+
+async function refresh() {
+  try {
+    render(await api("/status"));
+  } catch (e) {
+    if (e.message !== "unauthorized") setConn(false, "Mac unreachable");
+  }
+}
+
+function schedulePoll() {
+  clearInterval(pollTimer);
+  // Slower in the background: it only keeps lock-screen track info fresh.
+  pollTimer = setInterval(refresh, document.hidden ? 10000 : 3000);
+}
+
+// ---- Mac playback -------------------------------------------------------
+
+async function send(cmd) {
+  navigator.vibrate?.(10);
+  try {
+    await api(`/${cmd}`, "POST");
+  } catch (e) {
+    if (e.message !== "unauthorized") toast(e.message);
+  }
+  setTimeout(refresh, 400);
+}
+
+document.querySelectorAll(".ctl").forEach((b) => b.addEventListener("click", () => send(b.dataset.cmd)));
+
+// ---- listening ----------------------------------------------------------
+
+function setListenUI(state) {
+  const btn = $("listen");
+  btn.classList.toggle("live", state === "live");
+  btn.classList.toggle("connecting", state === "connecting");
+  btn.setAttribute("aria-pressed", String(state !== "off"));
+  $("listen-label").textContent = { off: "Listen", connecting: "Connecting", live: "Live" }[state];
+  $("listen-sub").textContent = { off: "on this phone", connecting: "buffering…", live: "tap to stop" }[state];
+}
+
+function connect() {
+  clearTimeout(reconnectTimer);
+  setListenUI("connecting");
+  switching = true;
+  // A fresh URL every time so playback resumes at the live edge, not from a stale buffer.
+  audio.src = `/stream.mp3?t=${Date.now()}`;
+  lastTime = 0;
+  stuckSince = Date.now();
+  audio.play().catch((e) => {
+    if (e.name === "NotAllowedError") {
+      wantListen = false;
+      setListenUI("off");
+      toast("Tap Listen to start audio");
+    } else {
+      scheduleReconnect(); // e.g. AbortError when the browser interrupts the load
+    }
+  });
+}
+
+function startListening() {
+  wantListen = true;
+  retry = 0;
+  connect();
+}
+
+function stopListening() {
+  wantListen = false;
+  clearTimeout(reconnectTimer);
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  setListenUI("off");
+}
+
+function scheduleReconnect() {
+  if (!wantListen) return;
+  clearTimeout(reconnectTimer);
+  const delay = Math.min(1000 * 2 ** retry, 15000);
+  retry++;
+  setListenUI("connecting");
+  reconnectTimer = setTimeout(connect, delay);
+}
+
+audio.addEventListener("playing", () => { switching = false; retry = 0; setListenUI("live"); });
+// The OS paused us (headphones unplugged, a call came in): reflect it instead of showing "Live".
+audio.addEventListener("pause", () => { if (wantListen && !switching) stopListening(); });
+audio.addEventListener("error", scheduleReconnect);
+audio.addEventListener("ended", scheduleReconnect);
+
+// Cellular hand-offs can leave the stream silently stuck; reconnect if playback stops advancing.
+// (A pause we didn't ask for already turned wantListen off, so paused here also means stuck.)
+setInterval(() => {
+  if (!wantListen) return;
+  if (!audio.paused && audio.currentTime > lastTime) {
+    lastTime = audio.currentTime;
+    stuckSince = Date.now();
+  } else if (Date.now() - stuckSince > 15000) {
+    scheduleReconnect();
+    stuckSince = Date.now();
+  }
+}, 2000);
+
+$("listen").addEventListener("click", () => (wantListen ? stopListening() : startListening()));
+$("reconnect").addEventListener("click", () => (wantListen ? connect() : startListening()));
+$("logout").addEventListener("click", async () => {
+  stopListening();
+  await api("/logout", "POST").catch(() => {});
+  document.body.classList.add("locked");
+});
+
+// Lock-screen / headphone controls drive the Mac. Pausing also drops the stream
+// (saves data); playing reconnects at the live edge.
+if ("mediaSession" in navigator) {
+  const ms = navigator.mediaSession;
+  ms.setActionHandler("play", () => { send("play"); startListening(); });
+  ms.setActionHandler("pause", () => { send("pause"); stopListening(); });
+  ms.setActionHandler("nexttrack", () => send("next"));
+  ms.setActionHandler("previoustrack", () => send("prev"));
+}
+
+// ---- boot ---------------------------------------------------------------
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await login($("token").value.trim());
+  } catch {
+    toast("That token didn't work");
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  schedulePoll();
+  if (!document.hidden) refresh();
+});
+
+// Pairing links look like http://<mac>:8765/#token=... — the fragment never reaches the server or its logs.
+async function consumePairingLink() {
+  const m = location.hash.match(/token=([^&]+)/);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname);
+  try { await login(decodeURIComponent(m[1])); } catch { toast("That pairing link's token didn't work"); }
+}
+// Opening the link while the page is already open only changes the fragment.
+window.addEventListener("hashchange", consumePairingLink);
+
+(async () => {
+  await consumePairingLink();
+  try {
+    render(await api("/status"));
+    document.body.classList.remove("locked");
+  } catch {}
+  schedulePoll();
+})();
+</script>
+</body>
+</html>

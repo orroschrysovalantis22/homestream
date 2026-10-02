@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # macOS: the server uses PyObjC and ffmpeg's avfoundation input.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ffmpeg and shellcheck
+        run: brew install ffmpeg shellcheck
+      - name: Install Python dependencies
+        run: pip install -r control-server/requirements.txt -r control-server/requirements-dev.txt
+      - name: Lint shell scripts
+        run: shellcheck setup.sh scripts/*.sh
+      - name: Run tests
+        run: python -m pytest -v
