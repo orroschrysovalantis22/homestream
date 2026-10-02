@@ -1,13 +1,18 @@
 """HomeStream control server.
 
 Serves the phone page, the live audio stream and the playback API from one
-address. Every route except the page itself needs the shared token, sent as
-an "Authorization: Bearer <token>" header or as the cookie set by POST /auth.
+address.
+
+Who gets in: devices on your Tailscale network (Tailscale has already proven
+they're yours), plus anyone presenting the shared token, as an
+"Authorization: Bearer <token>" header or the cookie set by POST /auth. So
+your own phone needs no password, while someone on the Mac's Wi-Fi does.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -45,6 +50,8 @@ def load_env_file(path: Path) -> None:
 load_env_file(Path(os.environ.get("HOMESTREAM_ENV_FILE", ROOT / ".env")))
 
 TOKEN = os.environ.get("HOMESTREAM_TOKEN", "")
+TRUST_TAILSCALE = os.environ.get("HOMESTREAM_TRUST_TAILSCALE", "1") != "0"
+TAILSCALE_NETWORKS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
 HOST = os.environ.get("HOMESTREAM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOMESTREAM_PORT", "8765"))
 
@@ -77,14 +84,42 @@ def token_ok(candidate: str | None) -> bool:
     return bool(candidate) and secrets.compare_digest(candidate.encode(), TOKEN.encode())
 
 
-def require_token(request: Request) -> None:
+def is_tailscale_address(host: str | None) -> bool:
+    try:
+        ip = ipaddress.ip_address((host or "").split("%")[0])
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip in network for network in TAILSCALE_NETWORKS)
+
+
+def via_tailscale(request: Request) -> bool:
+    """A direct connection from another device on your tailnet.
+
+    Both ends must be Tailscale addresses: the phone's, and the Mac address it
+    connected to. Checking the Mac's side too means a device on the local
+    network can't get in just because its own address happens to look similar.
+    """
+    if not TRUST_TAILSCALE:
+        return False
+    server = (request.scope.get("server") or (None,))[0]
+    client = request.client.host if request.client else None
+    return is_tailscale_address(server) and is_tailscale_address(client)
+
+
+def has_token(request: Request) -> bool:
     header = request.headers.get("authorization", "")
     bearer = header[7:] if header.lower().startswith("bearer ") else None
-    if not (token_ok(bearer) or token_ok(request.cookies.get(COOKIE))):
-        raise HTTPException(401, "missing or wrong token")
+    return token_ok(bearer) or token_ok(request.cookies.get(COOKIE))
 
 
-authed = [Depends(require_token)]
+def require_access(request: Request) -> None:
+    if not (via_tailscale(request) or has_token(request)):
+        raise HTTPException(401, "not on your Tailscale network, and no valid token")
+
+
+authed = [Depends(require_access)]
 
 
 class AuthBody(BaseModel):
@@ -116,8 +151,9 @@ async def current_status() -> dict:
 
 
 @app.get("/status", dependencies=authed)
-async def status():
-    return await current_status()
+async def status(request: Request):
+    # "access" lets the page hide the token controls when Tailscale let us in.
+    return {**await current_status(), "access": "tailscale" if via_tailscale(request) else "token"}
 
 
 async def wait_for_change(timeout: float) -> None:
@@ -199,8 +235,12 @@ def main() -> None:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    if len(TOKEN) < 16:
-        raise SystemExit("Set HOMESTREAM_TOKEN (16+ chars) in .env — setup.sh generates one.")
+    if TOKEN and len(TOKEN) < 16:
+        raise SystemExit("HOMESTREAM_TOKEN is too short (16+ characters); setup.sh generates a good one.")
+    if not TOKEN and not TRUST_TAILSCALE:
+        raise SystemExit("Nobody could connect: set HOMESTREAM_TOKEN or HOMESTREAM_TRUST_TAILSCALE=1.")
+    if not TOKEN:
+        log.warning("no HOMESTREAM_TOKEN: only devices on your Tailscale network can connect")
     class Server(uvicorn.Server):
         # Audio streams and event streams never end on their own; close them
         # when asked to quit instead of letting uvicorn wait on them.

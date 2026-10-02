@@ -6,33 +6,34 @@
 
 Listen to whatever your home Mac is playing from your phone, anywhere, and control it: play, pause, skip.
 
-Play Spotify Web, YouTube or anything else on the Mac. Open one page on your phone over cellular data and you hear it, with real buttons and lock-screen controls. Nothing is exposed to the public internet. The phone reaches the Mac over [Tailscale](https://tailscale.com), a free private network.
+Play Spotify Web, YouTube, Apple Music or anything else on the Mac. On your phone, over cellular data, open one page. You hear the Mac about half a second behind live, and you get the album art and buttons a real player has, including on the lock screen. Nothing is exposed to the public internet: the phone reaches the Mac over [Tailscale](https://tailscale.com), a free private network.
 
-<p align="center"><img src="docs/screenshot.png" width="620" alt="The HomeStream phone page in dark and light mode: now-playing card, a big Listen button, and previous / play-pause / next controls"></p>
+<p align="center"><img src="docs/screenshot.png" width="620" alt="The HomeStream phone page in dark and light mode: album artwork, track title and artist, a progress bar, previous / play-pause / next controls and a Listen on this phone button"></p>
 
 ```
- Mac (home)                                                   Phone (anywhere)
-┌────────────────────────────────────────────────┐            ┌──────────────────────┐
-│ Browser / Spotify ──► BlackHole (virtual out)  │            │                      │
-│                           │                    │  Tailscale │  one web page:       │
-│                           ▼                    │ ◄────────► │   • Listen (MP3)     │
-│ control server (FastAPI) ◄── ffmpeg capture    │  private   │   • ⏮ ⏯ ⏭             │
-│   GET /stream.mp3   POST /play /pause /next …  │  network   │   • lock-screen keys │
-│   └─► media keys / AppleScript ──► the player  │            │                      │
-└────────────────────────────────────────────────┘            └──────────────────────┘
+ Mac (home)                                                       Phone (anywhere)
+┌─────────────────────────────────────────────────────┐          ┌──────────────────────────┐
+│ Browser / Spotify / Music ──► BlackHole (virtual out)│          │  one web page:           │
+│                                   │                  │          │   • live audio, ~0.5 s   │
+│                         PortAudio capture → MP3      │ Tailscale│   • artwork, title, time │
+│                                   ▼                  │ ◄──────► │   • ⏮ ⏯ ⏭                │
+│  control server (FastAPI):  /stream.mp3  /events     │  private │   • lock-screen controls │
+│     /play /pause /next ──► macOS Now Playing ──► app │  network │   • Home Screen icon     │
+└─────────────────────────────────────────────────────┘          └──────────────────────────┘
 ```
 
-* **Any phone, no app.** The audio is a plain HTTP MP3 stream, so it plays in Safari or Chrome and keeps playing with the screen locked.
-* **One address.** The page, the audio and the controls are all served by the same small server on port 8765.
-* **Remote control** of the Spotify desktop app (AppleScript, with track info and artwork) or of any browser player (system media keys).
-* **Private by default.** A shared token guards every route, and Tailscale keeps the server off the public internet.
-* **Lazy capture.** ffmpeg only runs while someone is listening.
+* **Any phone, no app.** A web page you add to your Home Screen. It keeps playing with the screen locked, and the lock screen shows the track with working buttons.
+* **About half a second behind live.** Fast enough that pressing ⏭ feels immediate (plus whatever time the music service takes to load the next song).
+* **Works with any player.** Controls and track info come from macOS's own Now Playing, the same thing Control Center shows: browser tabs, the Spotify app, Apple Music and more. No special permissions.
+* **No password on your own devices.** Tailscale already proves the phone is yours. Anything else, like a device on the Mac's Wi-Fi, needs the token.
+* **Clean audio.** Capture goes through PortAudio. ffmpeg's built-in macOS capture drops about 12% of the audio, which sounds like crackle.
+* **Light on the Mac.** It only captures while someone is listening.
 * Optional **Snapcast** server, for the Snapdroid Android app or multi-room setups.
 
 ## Requirements
 
 * macOS 13+ (Apple Silicon or Intel) with [Homebrew](https://brew.sh)
-* A Tailscale account (free), with the Tailscale app on the Mac and on your phone
+* A free Tailscale account, with the Tailscale app on the Mac and on your phone
 
 ## Setup
 
@@ -43,10 +44,10 @@ git clone https://github.com/orroschrysovalantis22/homestream.git && cd homestre
 
 `setup.sh` is safe to re-run. It:
 
-1. installs `ffmpeg`, `switchaudio-osx` and `qrencode` with Homebrew
-2. offers to install [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole), the virtual sound card that carries the Mac's audio to the relay. It's a driver, so macOS asks for your password and you may need to restart.
+1. installs `ffmpeg`, `media-control`, `switchaudio-osx` and `qrencode` with Homebrew
+2. offers to install [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole), the virtual sound card that carries the Mac's audio to the relay. It's a driver, so macOS asks for your password. If it isn't picked up straight away, restart the Mac (or run `sudo killall coreaudiod`).
 3. creates a Python environment in `control-server/.venv`
-4. writes `.env` with a random access token
+4. writes `.env` with a random token, used only for devices that aren't on Tailscale
 5. offers to install Tailscale and tells you when you still need to sign in
 
 Then install Tailscale on your phone and sign in with the same account.
@@ -57,29 +58,36 @@ Then install Tailscale on your phone and sign in with the same account.
 ./scripts/start-relay.sh
 ```
 
-It switches the Mac's sound output to BlackHole and checks permissions, so any macOS prompts appear now, while you're at the Mac. Then it keeps the Mac awake and prints a QR code. Scan the code with your phone. It opens the page already signed in, and you can save it to your home screen. Play something on the Mac and tap **Listen**. Press Ctrl+C to stop; your normal sound output comes back.
+The relay switches the Mac's sound output to BlackHole and checks permissions, so any macOS prompts appear now, while you're at the Mac. Then it keeps the Mac awake and prints your Mac's Tailscale address with a QR code:
+
+```
+  On your phone, with Tailscale switched on, scan the code below or type:
+      100.x.y.z:8765
+```
+
+On your phone, scan the code or type the address, tap **Share → Add to Home Screen**, and from then on HomeStream is an icon. Play something on the Mac and tap **Listen on this phone**. Press Ctrl+C on the Mac to stop; your normal sound output comes back.
 
 ### macOS permissions (asked once)
 
-`start-relay.sh` triggers each of these on startup and tells you what's missing:
-
 | Permission | For your terminal app | Why |
 |---|---|---|
-| **Microphone** | click Allow on the prompt | ffmpeg reads the BlackHole input device. Required. |
-| **Accessibility** | switch it on in the System Settings window that opens | sends the play/pause/next keys to browser players |
-| **Automation → Spotify** | click OK on the prompt | only when controlling the Spotify desktop app |
+| **Microphone** | click Allow on the prompt | reading the BlackHole input. Required. |
+| **Accessibility** | only for `HOMESTREAM_PLAYER=browser` | sends media keys. The default doesn't need it. |
+| **Automation → Spotify** | only for `HOMESTREAM_PLAYER=spotify` | AppleScript control of the Spotify app |
 
-Changes take effect after you restart the terminal. Set `HOMESTREAM_SKIP_PREFLIGHT=1` to skip the checks.
+`start-relay.sh` triggers these on startup and tells you what's missing. Changes take effect after you restart the terminal. Set `HOMESTREAM_SKIP_PREFLIGHT=1` to skip the checks.
 
 ### Choosing what to control
 
-Set `HOMESTREAM_PLAYER` in `.env`:
+`HOMESTREAM_PLAYER` in `.env`:
 
-| Value | Controls | Track info | Notes |
-|---|---|---|---|
-| `auto` (default) | Spotify app if it's running, else media keys | when using Spotify app | |
-| `spotify` | Spotify desktop app | title, artist, artwork | real play vs. pause |
-| `browser` | whatever the system media keys control: Spotify Web, YouTube, Apple Music… | none | macOS has one play/pause key, so play and pause both toggle |
+| Value | Controls | Track info |
+|---|---|---|
+| `auto` (default) | macOS Now Playing when `media-control` is installed, otherwise the Spotify app or media keys | full |
+| `nowplaying` | whatever Control Center's Now Playing shows: any browser tab, Spotify, Music… | title, artist, album, artwork, progress |
+| `spotify` | Spotify desktop app, via AppleScript | full |
+| `browser` | the system media keys. Needs Accessibility; play and pause both toggle. | none |
+| `dryrun` | a pretend player, for development | fake |
 
 ### Hearing it on the Mac too
 
@@ -88,10 +96,15 @@ By default the Mac goes silent while relaying, because its output is BlackHole. 
 ### Tips
 
 * **Data use:** 192 kbps is about 86 MB per hour. Set `HOMESTREAM_BITRATE=128k` for about 58 MB per hour.
-* **Latency** is a few seconds. Skips show up on the phone after that delay.
-* **Lock screen and headphone buttons** control the Mac. Pause also stops the stream (saving data), and play reconnects at the live edge.
+* **Lock screen:** ⏮ ⏯ ⏭ there control the Mac. Pausing also stops the download; play picks up at live.
+* **Network drops** (lifts, tunnels, switching cells) reconnect on their own, without touching the player, so it works while the phone is locked.
 * **Sleep:** the relay keeps the Mac from idling to sleep, but closing a MacBook's lid still sleeps it.
-* Dropped connections (going underground, switching cells) reconnect automatically.
+
+## How it works
+
+* **Capture.** `control-server/capture.py` reads BlackHole with PortAudio and pipes PCM into ffmpeg, which encodes MP3. The server cuts the MP3 into whole frames (about 26 ms each) and fans them out to listeners. A listener that falls behind loses whole frames, which play on cleanly. It never gets half a frame, which would decode as noise.
+* **Playback.** The page fetches `/stream.mp3` itself and feeds the frames to an `<audio>` element through Media Source Extensions (`ManagedMediaSource` on iPhone). That lets it keep only about 0.5 s buffered. Left alone, iPhone Safari waits until it has about 5 s, and stays that far behind for the whole session. Browsers without MSE fall back to a plain `<audio src>`.
+* **Now playing.** `media-control stream` reports track changes the moment they happen. The server pushes them to the page over server-sent events (`/events`), so the title and artwork change before the audio does.
 
 ## Optional: Snapcast
 
@@ -104,38 +117,40 @@ Point [Snapdroid](https://github.com/badaix/snapdroid) (Android) or any `snapcli
 
 ## Security
 
-* Every route except the page itself requires the token, sent as `Authorization: Bearer <token>` or as the HttpOnly cookie that the pairing link sets.
-* The pairing link carries the token in the URL fragment (`/#token=…`), which browsers never send to the server, so it doesn't end up in logs.
-* The server listens on all interfaces by default. Set `HOMESTREAM_HOST` to your Tailscale IP to refuse your local network entirely.
-* Don't port-forward 8765 to the internet. The token is the only protection and traffic is plain HTTP. If you need access from outside Tailscale, put HTTPS in front, e.g. `tailscale serve` or `tailscale funnel`.
-* Treat `.env` like a password. To revoke every phone, change `HOMESTREAM_TOKEN` and restart.
+* **Tailscale devices** get in without a password. A request counts only if both ends of the connection are Tailscale addresses (the phone's, and the Mac's that it connected to), so a device on the local network can't pass itself off as one. Set `HOMESTREAM_TRUST_TAILSCALE=0` to require the token from everyone.
+* **Everything else**, such as a device on the Mac's Wi-Fi, needs the token from `.env`: an `Authorization: Bearer <token>` header, or the cookie set when you enter it on the page. Links of the form `/#token=…` carry it in the URL fragment, which browsers never send to servers or logs.
+* Don't port-forward 8765 to the internet. Traffic is plain HTTP and the token is the only protection outside Tailscale. For access beyond your tailnet, put HTTPS in front, e.g. `tailscale serve` or `tailscale funnel`.
+* Treat `.env` like a password. To revoke every token-based device, change `HOMESTREAM_TOKEN` and restart. To revoke a Tailscale device, remove it from your tailnet.
 
 ## API
 
 ```bash
-TOKEN=...   # from .env
-curl -H "Authorization: Bearer $TOKEN" http://<mac>:8765/status
-curl -X POST -H "Authorization: Bearer $TOKEN" http://<mac>:8765/next
+curl http://100.x.y.z:8765/status               # from a device on your tailnet
+curl -X POST http://100.x.y.z:8765/next
+curl -H "Authorization: Bearer $TOKEN" http://192.168.1.20:8765/status   # anywhere else
 ```
 
 | Route | |
 |---|---|
-| `GET /` | phone page (no token needed) |
-| `POST /auth` `{"token": "…"}` | sets the session cookie |
-| `POST /logout` | clears it |
-| `GET /status` | player state, track info, stream state |
-| `POST /play` `/pause` `/toggle` `/next` `/prev` | playback control. Returns 409 with a reason if it can't act (e.g. missing permission). |
-| `GET /stream.mp3` | live audio |
+| `GET /` | the phone page (public) |
+| `GET /status` | player state, track info and progress, stream state, and how you got in (`access`) |
+| `GET /events` | the same as server-sent events, pushed on every change |
+| `GET /artwork?v=…` | current album art |
+| `POST /play` `/pause` `/toggle` `/next` `/prev` | playback control. Returns 409 with a reason if it can't act. |
+| `GET /stream.mp3?id=…` | live audio (MP3) |
+| `GET /stream-info?id=…` | when that connection's audio was captured, for measuring delay |
+| `POST /auth` `{"token": "…"}`, `POST /logout` | set or clear the token cookie |
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Phone says *Mac unreachable* | Tailscale must be connected on both devices, and the Mac awake with the relay running. |
-| Listen spins but there's no sound | The Mac's output must be BlackHole: `SwitchAudioSource -c`. The page footer shows capture errors. *Input/output error* usually means the terminal lacks Microphone permission. |
-| Buttons do nothing (browser mode) | Grant Accessibility to your terminal app, then restart the relay. |
-| `audio device 'BlackHole 2ch' not found` | Restart the Mac after installing BlackHole. |
-| No sound on the Mac after a crash | Switch the output back in System Settings → Sound, or run `SwitchAudioSource -s "MacBook Pro Speakers"`. |
+| The page asks for a token | That device isn't coming through Tailscale. Switch Tailscale on in its app and reload. |
+| A name like `my-mac:8765` doesn't load | Safari treats a bare name as a search. Use the numeric address (`100.x.y.z:8765`) or `http://my-mac:8765`. |
+| *Mac unreachable* | Tailscale must be connected on both devices, and the Mac awake with the relay running. |
+| Listen spins but there's no sound | The Mac's output must be BlackHole: `SwitchAudioSource -c`. Capture errors show at the bottom of the page. |
+| `audio device 'BlackHole 2ch' not found` | Restart the Mac after installing BlackHole, or run `sudo killall coreaudiod`. |
+| No sound on the Mac after a crash | Switch the output back in System Settings → Sound, or `SwitchAudioSource -s "MacBook Pro Speakers"`. |
 
 ## Development
 
@@ -145,28 +160,43 @@ You don't need BlackHole or real playback to work on the code:
 HOMESTREAM_AUDIO_DEVICE=test-tone HOMESTREAM_PLAYER=dryrun ./scripts/start-relay.sh
 ```
 
-The relay then streams a 440 Hz tone and only logs commands. Environment variables override `.env`.
-
-Tests start a real server against the test tone. They take a few seconds, need ffmpeg, and also run in CI:
+Add `?debug` to the page's address to see the measured delay. Tests start a real server; they take a few seconds, need ffmpeg, and also run in CI:
 
 ```bash
 control-server/.venv/bin/pip install -r control-server/requirements-dev.txt
 control-server/.venv/bin/python -m pytest
 ```
 
+### Testing on a (simulated) iPhone
+
+iPhone Safari buffers and plays differently from desktop browsers, so the real check is the iOS Simulator (Xcode → Settings → Platforms → iOS):
+
+1. `tools/harness.sh` starts a test relay on port 8766. It plays `test-signal`: a 440 Hz tone with a 1 kHz beep at the start of every second.
+2. In the Simulator, open `http://localhost:8766/?debug`, with the Mac's sound output set to BlackHole, and tap Listen. The page reports its delay into the relay's log (`/tmp/homestream-harness.log`).
+3. Record what the simulated iPhone plays, and check it for gaps, noise and timing:
+
+```bash
+control-server/.venv/bin/python control-server/capture.py --seconds 15 "BlackHole 2ch" |
+  ffmpeg -f s16le -ar 48000 -ac 2 -i - -ac 1 -ar 44100 -f s16le rec.raw
+control-server/.venv/bin/python tools/analyze_test_signal.py rec.raw   # beeps 1000 ms apart = clean
 ```
-control-server/main.py          FastAPI app: page, auth, API, stream
-control-server/audio_stream.py  ffmpeg capture → MP3 fan-out to listeners
-control-server/mac_control.py   Spotify (AppleScript) and media-key backends
+
+### Layout
+
+```
+control-server/main.py          FastAPI app: page, access rules, API, events, stream
+control-server/audio_stream.py  capture → MP3 frames → listeners
+control-server/capture.py       PortAudio capture (ffmpeg's macOS capture drops audio)
+control-server/mac_control.py   Now Playing, Spotify (AppleScript) and media-key backends
 control-server/preflight.py     startup permission checks
-web/index.html                  the phone page (single file, no build step)
+web/index.html                  the phone page: one file, no build step
 web/static/                     icons and web app manifest
-scripts/start-relay.sh          routing, caffeinate, optional snapserver, server
-scripts/capture-pcm.sh          PCM capture for snapserver
+scripts/start-relay.sh          routing, permissions, caffeinate, optional snapserver, server
 config/                         env.example, snapserver.conf.template
-tests/                          pytest suite (API, streaming, shutdown, backends)
+tests/                          pytest suite (API, access, streaming, shutdown, backends)
+tools/                          iPhone test harness and recording analyser
 ```
 
 ## License
 
-MIT © Orros Chrysovalantis ([@orroschrysovalantis22](https://github.com/orroschrysovalantis22)), see [LICENSE](LICENSE). BlackHole, Snapcast, ffmpeg and Tailscale are separate projects under their own licenses. Setup installs them from Homebrew; this repo doesn't bundle them.
+MIT © Orros Chrysovalantis ([@orroschrysovalantis22](https://github.com/orroschrysovalantis22)), see [LICENSE](LICENSE). BlackHole, Snapcast, ffmpeg, media-control and Tailscale are separate projects under their own licenses. Setup installs them from Homebrew; this repo doesn't bundle them.

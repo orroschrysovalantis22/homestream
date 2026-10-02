@@ -119,9 +119,7 @@ cat <<EOF
   1. Install Tailscale on your phone and sign in with the same account.
   2. Start the relay:   ./scripts/start-relay.sh
      The first time, macOS asks to let your terminal use the microphone.
-     Allow it: that's how ffmpeg reads the BlackHole device.
-  3. Scan the QR code it prints with your phone, then tap Listen.
-  4. To control a browser player (Spotify Web, YouTube), add your terminal app under
-     System Settings → Privacy & Security → Accessibility (it sends the media keys).
-     The Spotify desktop app needs no extra setup. macOS asks once to allow control.
+     Allow it: that's how the relay hears BlackHole.
+  3. On your phone, scan the QR code it prints (or type the address it shows),
+     then Share -> Add to Home Screen. Play something on the Mac and tap Listen.
 EOF

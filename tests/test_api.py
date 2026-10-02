@@ -138,3 +138,54 @@ def test_ctrl_c_with_a_listener_exits_promptly():
     # uvicorn shuts down cleanly, then re-raises SIGINT like any Ctrl+C'd program.
     assert srv.proc.returncode in (0, -signal.SIGINT)
     assert took < 2, f"shutdown took {took:.1f}s"
+
+
+# --- who gets in -------------------------------------------------------------------
+
+def make_request(client: str, server: str):
+    from starlette.requests import Request
+
+    return Request({"type": "http", "headers": [], "client": (client, 50000), "server": (server, 8765)})
+
+
+@pytest.mark.parametrize(
+    "client,server,trusted",
+    [
+        ("100.101.102.103", "100.64.0.10", True),        # phone -> Mac, both on the tailnet
+        ("fd7a:115c:a1e0::2", "fd7a:115c:a1e0::1", True),
+        ("100.101.102.103", "192.168.1.20", False),       # tailnet-looking client on the local network
+        ("192.168.1.30", "100.64.0.10", False),
+        ("192.168.1.30", "192.168.1.20", False),          # someone on the same Wi-Fi
+        ("127.0.0.1", "127.0.0.1", False),                # local processes / proxies need the token
+        ("100.128.0.1", "100.64.0.10", False),           # just outside 100.64.0.0/10
+    ],
+)
+def test_only_direct_tailscale_connections_skip_the_token(client, server, trusted):
+    import main
+
+    assert main.via_tailscale(make_request(client, server)) is trusted
+
+
+def test_status_says_how_we_got_in(server):
+    assert server.request("GET", "/status", token=TOKEN).json()["access"] == "token"
+
+
+def test_runs_without_a_token_but_then_only_tailscale_gets_in():
+    srv = start_server(HOMESTREAM_TOKEN="")
+    try:
+        assert srv.request("GET", "/").status == 200
+        assert srv.request("GET", "/status").status == 401  # localhost isn't on the tailnet
+        assert srv.request("POST", "/auth", body={"token": ""}).status in (401, 422)
+    finally:
+        stop_server(srv)
+
+
+def test_refuses_to_start_when_nobody_could_connect():
+    result = subprocess.run(
+        [sys.executable, str(SERVER_DIR / "main.py")],
+        env={"PATH": "/usr/bin:/bin", "HOMESTREAM_ENV_FILE": str(ROOT / "tests" / "nope.env"),
+             "HOMESTREAM_TOKEN": "", "HOMESTREAM_TRUST_TAILSCALE": "0"},
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "Nobody could connect" in result.stderr

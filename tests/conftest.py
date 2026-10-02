@@ -19,6 +19,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SERVER_DIR = ROOT / "control-server"
 sys.path.insert(0, str(SERVER_DIR))
+# Tests that import the server module must not pick up the developer's real .env.
+os.environ["HOMESTREAM_ENV_FILE"] = str(ROOT / "tests" / "does-not-exist.env")
 
 TOKEN = "test-token-0123456789abcdef"
 

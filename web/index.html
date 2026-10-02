@@ -138,6 +138,7 @@
   #login form { display: flex; flex-direction: column; gap: 12px; background: var(--surface); padding: 16px; border-radius: 20px; box-shadow: var(--shadow); }
   #login input { font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--surface-2); background: var(--bg); color: var(--text); width: 100%; }
   #login button { font-weight: 600; padding: 14px; border-radius: 14px; border: 0; background: var(--accent); color: var(--accent-ink); }
+  #login button.secondary { background: var(--surface-2); color: var(--text); }
   #login p { color: var(--muted); margin: 0; }
 </style>
 </head>
@@ -147,9 +148,11 @@
 <main id="login">
   <header><h1>HomeStream</h1></header>
   <form id="login-form">
-    <p>Open the link that <code>start-relay.sh</code> prints, or paste the token from your <code>.env</code>.</p>
+    <p><strong>This device isn't connected through Tailscale.</strong> Switch Tailscale on in its app and reload this page.</p>
+    <p>Or, to connect without Tailscale, enter the token from the <code>.env</code> file on your Mac.</p>
     <input id="token" type="password" autocomplete="current-password" placeholder="Token" required>
     <button type="submit">Connect</button>
+    <button type="button" id="retry" class="secondary">Reload</button>
   </form>
 </main>
 
@@ -216,6 +219,7 @@ let wantListen = false;
 let skipTimer = null;
 let lastTrackKey = "";
 let events = null;
+let accessMode = null;        // "tailscale" (no password needed) or "token"
 let expected = null;          // {state, until}: what the user just asked for
 let clockOffset = 0;          // server clock minus ours
 window.homestream = { delay: null, buffer: null };  // read by the test harness
@@ -300,6 +304,10 @@ function applyExpectation(p) {
 function render(data) {
   status = data;
   const { player: p, stream: s } = data;
+  if (data.access) {
+    accessMode = data.access;
+    $("logout").style.display = accessMode === "tailscale" ? "none" : "";
+  }
   applyExpectation(p);
   setConn(true, "Mac online");
 
@@ -741,6 +749,8 @@ if ("mediaSession" in navigator) {
 }
 
 // ---- boot -----------------------------------------------------------------
+
+$("retry").addEventListener("click", () => location.reload());
 
 $("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();

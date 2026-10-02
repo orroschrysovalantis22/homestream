@@ -87,31 +87,50 @@ if [[ "${HOMESTREAM_SNAPCAST:-0}" == 1 ]]; then
 fi
 
 # --- 5. How to connect ------------------------------------------------------
-tailscale_ip() {
+tailscale_cli() {
   local cli
   for cli in tailscale /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
-    if command -v "$cli" >/dev/null 2>&1 || [[ -x "$cli" ]]; then
-      "$cli" ip -4 2>/dev/null | head -1 && return
-    fi
+    if command -v "$cli" >/dev/null 2>&1; then command -v "$cli"; return; fi
   done
 }
-TS_IP="$(tailscale_ip || true)"
-HOST_FOR_PHONE="${TS_IP:-$(ipconfig getifaddr en0 2>/dev/null || echo localhost)}"
-URL="http://$HOST_FOR_PHONE:$PORT/#token=$HOMESTREAM_TOKEN"
+TS_CLI="$(tailscale_cli || true)"
+TS_IP="" TS_NAME=""
+if [[ -n "$TS_CLI" ]]; then
+  TS_IP="$("$TS_CLI" ip -4 2>/dev/null | head -1 || true)"
+  # This Mac's Tailscale name, e.g. "my-macbook" from "my-macbook.tail1234.ts.net."
+  TS_NAME="$("$TS_CLI" status --json 2>/dev/null |
+    "$PY" -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].split(".")[0])' 2>/dev/null || true)"
+fi
 
 echo
 echo "HomeStream is starting."
-echo "  On this Mac: http://localhost:$PORT/#token=$HOMESTREAM_TOKEN"
-if [[ -z "$TS_IP" ]]; then
+if [[ -n "$TS_IP" && "${HOMESTREAM_TRUST_TAILSCALE:-1}" != 0 ]]; then
+  # Devices on your Tailscale network get in without a password. The numeric
+  # address always works; a bare name like "my-mac:8765" typed into Safari
+  # would be treated as a search.
+  PHONE_URL="http://$TS_IP:$PORT"
+  echo
+  echo "  On your phone, with Tailscale switched on, scan the code below or type:"
+  echo "      $TS_IP:$PORT"
+  [[ -n "$TS_NAME" ]] && echo "      (by name: http://$TS_NAME:$PORT, including the http://)"
+  echo "  then Share -> Add to Home Screen, and it's an app from then on."
+else
+  # No Tailscale: only the local network, and the token is required.
+  LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || echo localhost)"
+  PHONE_URL="http://$LAN_IP:$PORT/#token=${HOMESTREAM_TOKEN:-}"
+  echo
   echo "  Tailscale isn't connected, so this only works on your home Wi-Fi:"
+  echo "      $PHONE_URL"
 fi
-echo "  On your phone: $URL"
 if command -v qrencode >/dev/null; then
   echo
-  qrencode -t ANSIUTF8 -m 2 "$URL"
+  qrencode -t ANSIUTF8 -m 2 "$PHONE_URL"
+fi
+if [[ -n "${HOMESTREAM_TOKEN:-}" ]]; then
+  echo "  On this Mac: http://localhost:$PORT/#token=$HOMESTREAM_TOKEN"
 fi
 if [[ "${HOMESTREAM_SNAPCAST:-0}" == 1 ]]; then
-  echo "  Snapcast clients: connect to $HOST_FOR_PHONE (port 1704)"
+  echo "  Snapcast clients: connect to ${TS_IP:-$LAN_IP} (port 1704)"
 fi
 echo
 echo "Play something on the Mac, then tap Listen on the phone. Ctrl+C to stop."
