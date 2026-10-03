@@ -96,6 +96,19 @@ class DryRunController:
         )
 
 
+class NoControlController:
+    """No way to see or control the player: audio still streams, and the phone says why its buttons don't work."""
+
+    def __init__(self, name: str, reason: str) -> None:
+        self.name, self.reason = name, reason
+
+    async def command(self, cmd: str) -> None:
+        raise ControlError(self.reason)
+
+    async def status(self) -> PlayerStatus:
+        return PlayerStatus(self.name, warning=self.reason)
+
+
 def make_controller(kind: str = "auto"):
     if kind == "dryrun":
         return DryRunController()

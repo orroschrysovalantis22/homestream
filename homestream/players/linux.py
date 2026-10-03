@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import ControlError, PlayerStatus, log, to_float
+from . import ControlError, NoControlController, PlayerStatus, log, to_float
 
 FIELDS = ("status", "playerName", "xesam:title", "xesam:artist", "xesam:album", "mpris:artUrl", "mpris:length", "position")
 FORMAT = "\t".join("{{%s}}" % f for f in FIELDS)
@@ -148,5 +148,9 @@ def make_linux_controller(kind: str):
         raise SystemExit(f"HOMESTREAM_PLAYER must be auto, mpris or dryrun on Linux (got {kind!r})")
     binary = shutil.which("playerctl")
     if not binary:
-        raise SystemExit("Playback control needs playerctl: e.g. sudo apt install playerctl")
+        reason = "Playback control needs playerctl: e.g. sudo apt install playerctl"
+        if kind == "mpris":
+            raise SystemExit(reason)
+        log.warning("%s; streaming audio without controls", reason)
+        return NoControlController("mpris", reason)
     return MprisController(binary, os.environ.get("HOMESTREAM_MPRIS_PLAYER") or None)

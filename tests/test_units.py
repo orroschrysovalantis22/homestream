@@ -242,6 +242,18 @@ def test_mpris_passes_web_artwork_through_and_goes_idle():
     assert asyncio.run(c.status()).state == "idle"
 
 
+def test_without_playerctl_audio_still_streams_and_the_phone_says_why(monkeypatch):
+    from homestream.players import linux
+
+    monkeypatch.setattr(linux.shutil, "which", lambda name: None)
+    player = linux.make_linux_controller("auto")
+    assert "playerctl" in asyncio.run(player.status()).warning
+    with pytest.raises(ControlError, match="playerctl"):
+        asyncio.run(player.command("next"))
+    with pytest.raises(SystemExit, match="playerctl"):  # asked for MPRIS by name: a config error
+        linux.make_linux_controller("mpris")
+
+
 @posix_only
 def test_mpris_commands_use_playerctl_verbs(tmp_path):
     from homestream.players.linux import MprisController
