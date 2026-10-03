@@ -124,6 +124,8 @@ Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source che
 * The **Connect a phone** page (`/pair`) is only served to the computer's own browser.
 * Don't port-forward 8765 to the internet; traffic is plain HTTP. For access beyond your tailnet, put HTTPS in front (`tailscale serve` / `funnel`).
 
+More, and how to report a security problem privately: [SECURITY.md](SECURITY.md).
+
 ### API
 
 | Route | |

@@ -265,7 +265,7 @@ def test_mpris_reads_playerctl_output(tmp_path):
     from homestream.players.linux import MprisController
 
     art = tmp_path / "cover.png"
-    art.write_bytes(b"\x89PNG fake")
+    art.write_bytes(b"\x89PNG\r\n\x1a\n fake")
     c = MprisController("playerctl")
     c.update(mpris_line(**{
         "status": "Playing", "playerName": "spotify", "xesam:title": "Song", "xesam:artist": "Band",
@@ -274,7 +274,18 @@ def test_mpris_reads_playerctl_output(tmp_path):
     s = asyncio.run(c.status())
     assert (s.state, s.title, s.artist, s.album, s.app) == ("playing", "Song", "Band", "Album", "Spotify")
     assert s.duration == 215.0 and s.elapsed == 12.5 and s.elapsed_at
-    assert s.artwork == f"/artwork?v={c.artwork_id}" and c.artwork == ("image/png", b"\x89PNG fake")
+    assert s.artwork == f"/artwork?v={c.artwork_id}" and c.artwork == ("image/png", b"\x89PNG\r\n\x1a\n fake")
+
+
+def test_mpris_only_serves_pictures_as_artwork(tmp_path):
+    # Whatever file a player names as its artwork, only a picture is ever handed out.
+    from homestream.players.linux import MprisController
+
+    secret = tmp_path / "notes.txt"
+    secret.write_bytes(b"not a picture")
+    c = MprisController("playerctl")
+    c.update(mpris_line(**{"status": "Playing", "xesam:title": "Song", "mpris:artUrl": f"file://{secret}"}))
+    assert c.artwork is None and asyncio.run(c.status()).artwork is None
 
 
 def test_mpris_passes_web_artwork_through_and_goes_idle():

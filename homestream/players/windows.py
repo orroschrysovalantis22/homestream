@@ -123,7 +123,7 @@ class WindowsMediaController:
             self.artwork = self.artwork_id = None
             return
         self.artwork = (getattr(stream, "content_type", "") or "image/png", data)
-        self.artwork_id = hashlib.sha1(data).hexdigest()[:12]
+        self.artwork_id = hashlib.sha1(data, usedforsecurity=False).hexdigest()[:12]
 
     async def command(self, cmd: str) -> None:
         session = await self._session()

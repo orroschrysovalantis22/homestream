@@ -250,7 +250,7 @@ class NowPlayingController:
                 data = b""
             if data and (not self.artwork or self.artwork[1] != data):
                 self.artwork = (payload.get("artworkMimeType") or "image/jpeg", data)
-                self.artwork_id = hashlib.sha1(data).hexdigest()[:12]
+                self.artwork_id = hashlib.sha1(data, usedforsecurity=False).hexdigest()[:12]
         elif not payload.get("title"):
             self.artwork = self.artwork_id = None
         self.info = payload

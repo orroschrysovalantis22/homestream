@@ -87,6 +87,32 @@ def is_tailscale_address(host: str | None) -> bool:
     return any(ip in network for network in TAILSCALE_NETWORKS)
 
 
+def host_name(request: Request) -> str:
+    """The name or address in the browser's address bar (the Host header), without the port."""
+    host = request.headers.get("host", "").strip().lower()
+    if host.startswith("["):  # [IPv6]:port
+        return host[1:host.find("]")] if "]" in host else ""
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def addressed_directly(request: Request) -> bool:
+    """Reached by an IP address, a Tailscale (MagicDNS) name or localhost.
+
+    A web page can point its own domain at this computer's address ("DNS rebinding") to
+    make your browser talk to HomeStream on its behalf; its domain then shows up here and
+    fails this check.
+    """
+    name = host_name(request)
+    if not name:
+        return False
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return name == "localhost" or "." not in name or name.endswith((".ts.net", ".tailscale.net"))
+
+
 def via_tailscale(request: Request) -> bool:
     """A direct connection from another device on your tailnet.
 
@@ -94,7 +120,7 @@ def via_tailscale(request: Request) -> bool:
     connected to. Checking the Mac's side too means a device on the local
     network can't get in just because its own address happens to look similar.
     """
-    if not TRUST_TAILSCALE:
+    if not TRUST_TAILSCALE or not addressed_directly(request):
         return False
     server = (request.scope.get("server") or (None,))[0]
     client = request.client.host if request.client else None
@@ -129,17 +155,23 @@ class AuthBody(BaseModel):
     token: str
 
 
+# Pages refuse to be shown inside another site's frame, where taps could be tricked.
+NO_FRAMING = {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
+
+
 @app.get("/", include_in_schema=False)
 async def index():
-    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache", **NO_FRAMING})
 
 
 def from_this_computer(request: Request) -> bool:
-    """A direct connection from this computer itself (not via a proxy)."""
+    """A direct connection from this computer itself, to localhost (not via a proxy, and not a web
+    page that pointed its own domain at this computer to read the token off the pairing page)."""
     loopback = ("127.0.0.1", "::1", "localhost")
     server = (request.scope.get("server") or (None,))[0]
     client = request.client.host if request.client else None
-    return client in loopback and server in loopback and "x-forwarded-for" not in request.headers
+    return (client in loopback and server in loopback and host_name(request) in loopback
+            and "x-forwarded-for" not in request.headers)
 
 
 @app.get("/pair", include_in_schema=False)
@@ -174,7 +206,7 @@ async def pair(request: Request):
     page = (WEB_DIR / "pair.html").read_text(encoding="utf-8")  # not the Windows default (cp1252)
     for key, value in values.items():
         page = page.replace("{{" + key + "}}", value)
-    return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
+    return Response(page, media_type="text/html", headers={"Cache-Control": "no-store", **NO_FRAMING})
 
 
 @app.post("/auth", status_code=204, dependencies=[Depends(same_site_only)])
@@ -245,8 +277,12 @@ async def artwork():
     if not art:
         raise HTTPException(404, "no artwork")
     mime, data = art
+    if not str(mime).startswith("image/"):  # only ever an image, whatever the player claims
+        raise HTTPException(404, "no artwork")
     # The URL carries a version (?v=...), so each image can be cached for good.
-    return Response(data, media_type=mime, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+    return Response(data, media_type=mime, headers={
+        "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+    })
 
 
 def command_route(cmd: str):

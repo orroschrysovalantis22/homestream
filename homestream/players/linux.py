@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import mimetypes
 import os
 import shutil
 import time
@@ -26,6 +25,23 @@ FORMAT = "\t".join("{{%s}}" % f for f in FIELDS)
 
 APP_NAMES = {"chromium": "Chromium", "chrome": "Chrome", "firefox": "Firefox", "brave": "Brave", "spotify": "Spotify",
              "vlc": "VLC", "mpv": "mpv", "rhythmbox": "Rhythmbox", "elisa": "Elisa", "strawberry": "Strawberry"}
+
+
+MAX_ARTWORK_BYTES = 10 * 1024 * 1024
+
+
+def image_type(data: bytes) -> str | None:
+    """The picture type from a file's first bytes, or None if it isn't one. (Browsers save
+    artwork without a file extension, so the name can't be trusted either way.)"""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 class MprisController:
@@ -95,12 +111,17 @@ class MprisController:
         elif url.startswith("file://"):
             path = Path(unquote(urlparse(url).path))
             try:
+                if path.stat().st_size > MAX_ARTWORK_BYTES:
+                    return
                 data = path.read_bytes()
             except OSError:
                 return
-            artwork_id = hashlib.sha1(data).hexdigest()[:12]
+            mime = image_type(data)
+            if mime is None:  # only ever a picture, whatever file the player names
+                self.artwork = self.artwork_id = None
+                return
+            artwork_id = hashlib.sha1(data, usedforsecurity=False).hexdigest()[:12]
             if artwork_id != self.artwork_id:
-                mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
                 self.artwork, self.artwork_id = (mime, data), artwork_id
         else:
             self.artwork = self.artwork_id = None

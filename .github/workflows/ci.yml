@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read  # tests and lint only read the code
+
 jobs:
   test:
     strategy:

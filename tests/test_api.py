@@ -1,5 +1,6 @@
 """End-to-end tests against a real server process (test tone + dry-run player)."""
 
+import asyncio
 import http.client
 import json
 import os
@@ -145,10 +146,25 @@ def test_ctrl_c_with_a_listener_exits_promptly():
 
 # --- who gets in -------------------------------------------------------------------
 
-def make_request(client: str, server: str):
+def make_request(client: str, server: str, host: str | None = None, headers=()):
     from starlette.requests import Request
 
-    return Request({"type": "http", "headers": [], "client": (client, 50000), "server": (server, 8765)})
+    host = host or (f"[{server}]:8765" if ":" in server else f"{server}:8765")  # what the browser typed
+    return Request({"type": "http", "headers": [(b"host", host.encode()), *headers],
+                    "client": (client, 50000), "server": (server, 8765)})
+
+
+@pytest.mark.parametrize("host,trusted", [
+    ("100.64.0.10:8765", True),
+    ("my-mac:8765", True),                       # MagicDNS short name
+    ("my-mac.tail1234.ts.net", True),            # MagicDNS full name
+    ("evil.example:8765", False),                # a web page that pointed its domain at this computer
+    (" ", False),                                # no address at all
+])
+def test_tailscale_trust_needs_a_direct_address(host, trusted):
+    from homestream import server as main
+
+    assert main.via_tailscale(make_request("100.101.102.103", "100.64.0.10", host=host)) is trusted
 
 
 @pytest.mark.parametrize(
@@ -216,17 +232,36 @@ def test_pair_page_is_only_for_this_computer(server):
     assert "Share →".encode() in r.body  # read as UTF-8, not Windows' default code page
 
 
-@pytest.mark.parametrize("client,server_addr,headers,allowed", [
-    ("127.0.0.1", "127.0.0.1", [], True),
-    ("::1", "::1", [], True),
-    ("127.0.0.1", "127.0.0.1", [(b"x-forwarded-for", b"203.0.113.9")], False),  # via a local proxy
-    ("100.101.102.103", "100.64.0.10", [], False),  # a phone on the tailnet
-    ("192.168.1.30", "192.168.1.20", [], False),
+@pytest.mark.parametrize("client,server_addr,host,headers,allowed", [
+    ("127.0.0.1", "127.0.0.1", "localhost:8765", [], True),
+    ("::1", "::1", "[::1]:8765", [], True),
+    ("127.0.0.1", "127.0.0.1", "localhost:8765", [(b"x-forwarded-for", b"203.0.113.9")], False),  # via a local proxy
+    ("127.0.0.1", "127.0.0.1", "evil.example:8765", [], False),  # a web page pointed its domain here (DNS rebinding)
+    ("100.101.102.103", "100.64.0.10", None, [], False),  # a phone on the tailnet
+    ("192.168.1.30", "192.168.1.20", None, [], False),
 ])
-def test_pair_page_access_rule(client, server_addr, headers, allowed):
-    from starlette.requests import Request
+def test_pair_page_access_rule(client, server_addr, host, headers, allowed):
+    from homestream import server as main
+
+    assert main.from_this_computer(make_request(client, server_addr, host=host, headers=headers)) is allowed
+
+
+def test_pages_cant_be_framed_and_pairing_needs_localhost(server):
+    page = server.request("GET", "/")
+    assert page.headers["X-Frame-Options"] == "DENY"
+    assert server.request("GET", "/pair", headers={"Host": "evil.example:8765"}).status == 403
+
+
+def test_artwork_is_only_ever_an_image(monkeypatch):
+    from fastapi import HTTPException
 
     from homestream import server as main
 
-    request = Request({"type": "http", "headers": headers, "client": (client, 5000), "server": (server_addr, 8765)})
-    assert main.from_this_computer(request) is allowed
+    class Player:
+        artwork = ("text/html", b"<script>alert(1)</script>")
+
+    monkeypatch.setattr(main, "player", Player())
+    with pytest.raises(HTTPException):
+        asyncio.run(main.artwork())
+    Player.artwork = ("image/png", b"\x89PNG")
+    assert asyncio.run(main.artwork()).headers["x-content-type-options"] == "nosniff"
