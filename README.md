@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS · Windows · Linux](https://img.shields.io/badge/computer-macOS%20·%20Windows%20·%20Linux-lightgrey)
 ![iPhone · Android](https://img.shields.io/badge/phone-iPhone%20·%20Android-lightgrey)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/orroschrysovalantis22)
 
 Listen to whatever your computer is playing from your phone, anywhere, and control it: play, pause, skip.
 
@@ -167,6 +168,10 @@ homestream/web/             the phone page (one file, no build step), /pair page
 packaging/                  PyInstaller recipe and app icons
 tests/  tools/              tests; Linux, iPhone and Android test harnesses
 ```
+
+## Support
+
+HomeStream is free and open source. If it's useful to you, you can support its development on [GitHub Sponsors](https://github.com/sponsors/orroschrysovalantis22). Stars, bug reports and pull requests help too.
 
 ## License
 
