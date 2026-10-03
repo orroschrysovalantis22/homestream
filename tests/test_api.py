@@ -191,3 +191,27 @@ def test_refuses_to_start_when_nobody_could_connect():
     )
     assert result.returncode != 0
     assert "Nobody could connect" in result.stderr
+
+
+# --- the "Connect a phone" page -------------------------------------------------------
+
+def test_pair_page_is_only_for_this_computer(server):
+    r = server.request("GET", "/pair")
+    assert r.status == 200 and b"<svg" in r.body and b"Connect your phone" in r.body
+    assert b"{{" not in r.body  # every placeholder filled in
+
+
+@pytest.mark.parametrize("client,server_addr,headers,allowed", [
+    ("127.0.0.1", "127.0.0.1", [], True),
+    ("::1", "::1", [], True),
+    ("127.0.0.1", "127.0.0.1", [(b"x-forwarded-for", b"203.0.113.9")], False),  # via a local proxy
+    ("100.101.102.103", "100.64.0.10", [], False),  # a phone on the tailnet
+    ("192.168.1.30", "192.168.1.20", [], False),
+])
+def test_pair_page_access_rule(client, server_addr, headers, allowed):
+    from starlette.requests import Request
+
+    from homestream import server as main
+
+    request = Request({"type": "http", "headers": headers, "client": (client, 5000), "server": (server_addr, 8765)})
+    assert main.from_this_computer(request) is allowed

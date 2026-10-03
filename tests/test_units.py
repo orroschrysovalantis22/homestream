@@ -371,3 +371,33 @@ def test_test_signal_analyser_on_generated_audio():
     idx = (np.arange(int(len(mono_44k) * 44100 / RATE)) * RATE / 44100).astype(int)
     report = analyze(mono_44k[idx])
     assert report["beeps"] >= 2 and not report["timing_jumps"] and not report["tone_dropouts_at"]
+
+
+# --- start at login ----------------------------------------------------------------------
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the Windows version uses the registry")
+def test_start_at_login_toggles(tmp_path, monkeypatch):
+    from homestream import autostart
+
+    monkeypatch.setattr(autostart.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    assert not autostart.is_enabled()
+    autostart.set_enabled(True)
+    assert autostart.is_enabled()
+    if sys.platform == "darwin":
+        import plistlib
+
+        plist = plistlib.loads((tmp_path / "Library/LaunchAgents/com.homestream.tray.plist").read_bytes())
+        assert plist["RunAtLoad"] is True and plist["ProgramArguments"][-3:] == ["-m", "homestream", "tray"]
+    else:
+        text = (tmp_path / ".config/autostart/homestream.desktop").read_text()
+        assert "Exec=" in text and "homestream tray" in text
+    autostart.set_enabled(False)
+    assert not autostart.is_enabled()
+
+
+def test_autostart_command_uses_this_python():
+    from homestream import autostart
+
+    cmd = autostart.command()
+    assert cmd[-3:] == ["-m", "homestream", "tray"]

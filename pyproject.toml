@@ -44,7 +44,7 @@ Homepage = "https://github.com/orroschrysovalantis22/homestream"
 include = ["homestream*"]
 
 [tool.setuptools.package-data]
-homestream = ["web/*.html", "web/static/*"]
+homestream = ["web/*.html", "web/static/*", "web/static/tray/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

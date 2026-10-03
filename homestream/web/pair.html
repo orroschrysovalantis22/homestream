@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect a phone · HomeStream</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<style>
+  :root {
+    --bg: #f4f4f1; --surface: #ffffff; --surface-2: #e7e7e2; --text: #15161a; --muted: #6b6d75;
+    --accent: #1f9d6a; --warn: #b4690e; --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 10px 30px rgb(0 0 0 / .08);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e0f12; --surface: #1a1c21; --surface-2: #262930; --text: #f2f2ee; --muted: #9a9ca5;
+            --accent: #3ddc97; --warn: #f0b35a; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         -webkit-font-smoothing: antialiased; padding: 32px 16px; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow); padding: 24px;
+          display: grid; grid-template-columns: 260px 1fr; gap: 28px; align-items: center; }
+  .qr { background: #fff; border-radius: 14px; padding: 14px; width: 260px; aspect-ratio: 1; }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  ol { margin: 0; padding-left: 22px; display: grid; gap: 14px; }
+  li::marker { color: var(--muted); font-weight: 600; }
+  code { font: 600 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2);
+         padding: 2px 8px; border-radius: 8px; white-space: nowrap; }
+  .status { margin-top: 18px; font-size: 14px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .status.warn .dot { background: var(--warn); }
+  .small { font-size: 14px; color: var(--muted); }
+  @media (max-width: 640px) { .card { grid-template-columns: 1fr; } .qr { margin: 0 auto; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect your phone</h1>
+  <p class="lede">You only do this once. Afterwards HomeStream is an icon on your phone's Home Screen.</p>
+  <section class="card">
+    <div class="qr" role="img" aria-label="QR code for {{url}}">{{qr_svg}}</div>
+    <ol>
+      {{tailscale_step}}
+      <li>Point your phone's camera at the code, or type <code>{{typed}}</code> into its browser.{{name_hint}}</li>
+      <li>In the browser, tap <strong>Share → Add to Home Screen</strong> (iPhone) or <strong>⋮ → Add to Home screen</strong> (Android).</li>
+      <li>Play something on this computer and tap <strong>Listen on this phone</strong>.</li>
+    </ol>
+  </section>
+  <p class="status {{status_class}}"><span class="dot"></span>{{status}}</p>
+  <p class="small">This page is only shown on this computer.</p>
+</main>
+</body>
+</html>

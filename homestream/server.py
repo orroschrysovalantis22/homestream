@@ -118,6 +118,49 @@ async def index():
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+def from_this_computer(request: Request) -> bool:
+    """A direct connection from this computer itself (not via a proxy)."""
+    loopback = ("127.0.0.1", "::1", "localhost")
+    server = (request.scope.get("server") or (None,))[0]
+    client = request.client.host if request.client else None
+    return client in loopback and server in loopback and "x-forwarded-for" not in request.headers
+
+
+@app.get("/pair", include_in_schema=False)
+async def pair(request: Request):
+    """The "Connect a phone" page with a QR code. Only for this computer's own browser:
+    without Tailscale the phone link carries the token."""
+    if not from_this_computer(request):
+        raise HTTPException(403, "open this page on the computer running HomeStream")
+    import html
+
+    import qrcode
+    import qrcode.image.svg
+
+    from .system import phone_address
+
+    address = await asyncio.to_thread(phone_address, PORT)
+    qr_svg = qrcode.make(address["url"], image_factory=qrcode.image.svg.SvgPathImage, border=0).to_string(
+        encoding="unicode"
+    )
+    tailscale = address["via"] == "tailscale"
+    values = {
+        "qr_svg": qr_svg,
+        "url": html.escape(address["url"]),
+        "typed": html.escape(address["typed"]),
+        "name_hint": (f" (or by name: <code>http://{html.escape(address['name'])}:{PORT}</code>)" if address.get("name") else ""),
+        "tailscale_step": "" if not tailscale else
+            "<li>Install <strong>Tailscale</strong> on your phone and sign in with the same account as this computer.</li>",
+        "status": (f"Tailscale is connected: this computer is {html.escape(address['typed'].rsplit(':', 1)[0])}." if tailscale
+                   else "Tailscale isn't connected, so this only works while your phone is on the same Wi-Fi."),
+        "status_class": "" if tailscale else "warn",
+    }
+    page = (WEB_DIR / "pair.html").read_text()
+    for key, value in values.items():
+        page = page.replace("{{" + key + "}}", value)
+    return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
 @app.post("/auth", status_code=204)
 async def auth(body: AuthBody, request: Request, response: Response):
     if not token_ok(body.token):
