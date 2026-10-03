@@ -15,8 +15,8 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Install HomeStream
@@ -27,7 +27,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint shell scripts
         run: shellcheck setup.sh scripts/*.sh tools/*.sh tools/linux/*.sh
       - name: Lint Python (errors only)
@@ -37,6 +37,6 @@ jobs:
     # A real player (mpv) plays to PulseAudio; HomeStream streams and controls it.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run tools/linux/test.sh
         run: tools/linux/test.sh
