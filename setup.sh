@@ -34,7 +34,7 @@ setup_macos() {
   command -v brew >/dev/null || die "Homebrew is required. Install it from https://brew.sh, then re-run ./setup.sh"
 
   step "Command-line tools"
-  local formulae=(media-control switchaudio-osx)
+  local formulae=(media-control)
   [[ $WITH_SNAPCAST == 1 ]] && formulae+=(snapcast)
   local f
   for f in "${formulae[@]}"; do

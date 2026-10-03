@@ -63,7 +63,7 @@ def enable() -> None:
             "ProgramArguments": cmd,
             "RunAtLoad": True,
             "WorkingDirectory": str(SOURCE_ROOT),
-            # Login agents get a bare PATH; Homebrew's tools (media-control, SwitchAudioSource) live here.
+            # Login agents get a bare PATH; Homebrew's tools (media-control) live here.
             "EnvironmentVariables": {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
         }
         path.write_bytes(plistlib.dumps(plist))

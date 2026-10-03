@@ -401,3 +401,12 @@ def test_autostart_command_uses_this_python():
 
     cmd = autostart.command()
     assert cmd[-3:] == ["-m", "homestream", "tray"]
+
+
+@mac_only
+def test_mac_output_devices_are_readable():
+    from homestream import macaudio
+
+    outputs = macaudio.output_devices()
+    assert outputs and macaudio.default_output() in outputs
+    assert macaudio.set_default_output("No Such Output 123") is False

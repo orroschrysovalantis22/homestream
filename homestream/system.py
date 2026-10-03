@@ -46,19 +46,23 @@ def route_mac_output(device: str):
 
     Windows and Linux record what the speakers play, so they need no rerouting.
     """
-    switch = shutil.which("SwitchAudioSource")
     previous = None
-    if sys.platform == "darwin" and switch and os.environ.get("HOMESTREAM_AUTO_ROUTE", "1") == "1":
-        current = subprocess.run([switch, "-t", "output", "-c"], capture_output=True, text=True).stdout.strip()
-        if current and current != device:
-            subprocess.run([switch, "-t", "output", "-s", device], capture_output=True)
+    if sys.platform == "darwin" and os.environ.get("HOMESTREAM_AUTO_ROUTE", "1") == "1" and device not in (
+        "test-tone", "test-signal"
+    ):
+        from . import macaudio
+
+        current = macaudio.default_output()
+        if current and current != device and macaudio.set_default_output(device):
             previous = current
             print(f"Sound output: {current} -> {device} (switched back when HomeStream stops)")
     try:
         yield
     finally:
         if previous:
-            subprocess.run([switch, "-t", "output", "-s", previous], capture_output=True)
+            from . import macaudio
+
+            macaudio.set_default_output(previous)
             print(f"Sound output restored to: {previous}")
 
 
