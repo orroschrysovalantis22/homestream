@@ -34,11 +34,11 @@ From the [latest release](https://github.com/orroschrysovalantis22/homestream/re
 
 The apps aren't signed yet, so the first time:
 * **macOS:** right-click HomeStream → **Open** → **Open**.
-* **Windows:** if SmartScreen appears, **More info** → **Run anyway**.
+* **Windows:** if SmartScreen appears, **More info** → **Run anyway**. Then Windows asks whether HomeStream may use the network: **Allow**, that's how your phone reaches it.
 
 HomeStream appears in the menu bar (Mac) or system tray (Windows, Linux) and opens the **Connect a phone** page. Scan its QR code with your phone, tap **Share → Add to Home Screen**, and from then on it's an app on your phone. Play something on the computer and tap **Listen on this phone**.
 
-> **Windows status:** built and tested automatically on GitHub's Windows machines, but not yet on a real Windows PC with real playback. Reports welcome.
+> **Windows status:** tested on Windows 11 (in a virtual machine): capture verified gap-free with the test signal, controls with Media Player, the tray app and `HomeStream.exe`. Not yet on a physical PC with Spotify; reports welcome.
 
 ### Or run from source
 
@@ -130,6 +130,7 @@ curl -H "Authorization: Bearer $TOKEN" http://192.168.1.20:8765/status      # an
 |---|---|
 | The page asks for a token | That device isn't coming through Tailscale. Switch Tailscale on in its app and reload. |
 | A name like `my-pc:8765` doesn't load | Browsers treat a bare name as a search. Use the numeric address (`100.x.y.z:8765`) or type `http://` first. |
+| Windows: the phone can't connect | You clicked Cancel when Windows asked about the network. Windows Security → Firewall & network protection → Allow an app through firewall → tick HomeStream (or Python). |
 | *Mac unreachable* | Tailscale must be connected on both devices, and the computer awake with HomeStream running. |
 | No sound | macOS: the output must be BlackHole (HomeStream switches it unless `HOMESTREAM_AUTO_ROUTE=0`); allow the microphone permission. Linux: `homestream doctor` should list a "Monitor of …". |
 | No track info / buttons do nothing | macOS: `brew install media-control`. Linux: install `playerctl`. |

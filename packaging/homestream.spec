@@ -38,6 +38,32 @@ if sys.platform != "win32":
     # PortAudio ships prebuilt Windows DLLs too (pulled in by PyInstaller's own hook); drop them.
     a.datas = [d for d in a.datas if not d[0].lower().endswith(".dll")]
     a.binaries = [b for b in a.binaries if not b[0].lower().endswith(".dll")]
+version_info = None
+if sys.platform == "win32":
+    # The name Windows shows for the app, e.g. when it asks whether HomeStream may use the network.
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo, StringFileInfo, StringStruct, StringTable, VarFileInfo, VarStruct, VSVersionInfo,
+    )
+
+    from homestream import __version__
+
+    numbers = tuple(int(n) for n in __version__.split(".")) + (0,)
+    version_info = VSVersionInfo(
+        ffi=FixedFileInfo(filevers=numbers, prodvers=numbers),
+        kids=[
+            StringFileInfo([StringTable("040904B0", [
+                StringStruct("FileDescription", "HomeStream"),
+                StringStruct("ProductName", "HomeStream"),
+                StringStruct("CompanyName", "HomeStream"),
+                StringStruct("FileVersion", __version__),
+                StringStruct("ProductVersion", __version__),
+                StringStruct("OriginalFilename", "HomeStream.exe"),
+                StringStruct("LegalCopyright", "MIT License"),
+            ])]),
+            VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+        ],
+    )
+
 pyz = PYZ(a.pure)  # noqa: F821
 exe = EXE(  # noqa: F821
     pyz,
@@ -47,6 +73,7 @@ exe = EXE(  # noqa: F821
     name="HomeStream",
     console=False,
     icon=str(ROOT / "packaging" / ("HomeStream.ico" if sys.platform == "win32" else "HomeStream.icns")),
+    version=version_info,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="HomeStream")  # noqa: F821
 
