@@ -19,35 +19,22 @@ import os
 import secrets
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from audio_stream import AudioBroadcaster
-from mac_control import COMMANDS, ControlError, make_controller
+from .audio import AudioBroadcaster
+from .config import PACKAGE_DIR, default_audio_device, load_env_file
+from .players import COMMANDS, ControlError, make_controller
 
-ROOT = Path(__file__).resolve().parent.parent
+WEB_DIR = PACKAGE_DIR / "web"
 COOKIE = "homestream_token"
 
 log = logging.getLogger("homestream")
 
-
-def load_env_file(path: Path) -> None:
-    """Minimal .env reader; real environment variables win."""
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
-
-
-load_env_file(Path(os.environ.get("HOMESTREAM_ENV_FILE", ROOT / ".env")))
+load_env_file()
 
 TOKEN = os.environ.get("HOMESTREAM_TOKEN", "")
 TRUST_TAILSCALE = os.environ.get("HOMESTREAM_TRUST_TAILSCALE", "1") != "0"
@@ -56,7 +43,7 @@ HOST = os.environ.get("HOMESTREAM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOMESTREAM_PORT", "8765"))
 
 audio = AudioBroadcaster(
-    device=os.environ.get("HOMESTREAM_AUDIO_DEVICE", "BlackHole 2ch"),
+    device=os.environ.get("HOMESTREAM_AUDIO_DEVICE") or default_audio_device(),
     bitrate=os.environ.get("HOMESTREAM_BITRATE", "192k"),
     prebuffer=float(os.environ.get("HOMESTREAM_PREBUFFER", "1.0")),
 )
@@ -77,7 +64,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="HomeStream", lifespan=lifespan, docs_url=None, redoc_url=None)
 # Icons and the web app manifest; public so the home-screen icon loads before sign-in.
-app.mount("/static", StaticFiles(directory=ROOT / "web" / "static"), name="static")
+app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 
 def token_ok(candidate: str | None) -> bool:
@@ -128,7 +115,7 @@ class AuthBody(BaseModel):
 
 @app.get("/", include_in_schema=False)
 async def index():
-    return FileResponse(ROOT / "web" / "index.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/auth", status_code=204)
@@ -231,28 +218,49 @@ async def stream_info(id: str, delay: float | None = None):  # delay: the page's
     return {**info, "now": time.time()}
 
 
-def main() -> None:
-    import uvicorn
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+def check_settings() -> None:
     if TOKEN and len(TOKEN) < 16:
-        raise SystemExit("HOMESTREAM_TOKEN is too short (16+ characters); setup.sh generates a good one.")
+        raise SystemExit("HOMESTREAM_TOKEN is too short (16+ characters); setup generates a good one.")
     if not TOKEN and not TRUST_TAILSCALE:
         raise SystemExit("Nobody could connect: set HOMESTREAM_TOKEN or HOMESTREAM_TRUST_TAILSCALE=1.")
     if not TOKEN:
         log.warning("no HOMESTREAM_TOKEN: only devices on your Tailscale network can connect")
+
+
+def make_server(log_level: str = "info"):
+    """A uvicorn server for this app; .run() blocks, .request_stop() ends it from any thread."""
+    import uvicorn
+
     class Server(uvicorn.Server):
-        # Audio streams and event streams never end on their own; close them
-        # when asked to quit instead of letting uvicorn wait on them.
+        loop: asyncio.AbstractEventLoop | None = None
+
+        async def serve(self, sockets=None):
+            self.loop = asyncio.get_running_loop()
+            await super().serve(sockets)
+
+        def request_stop(self) -> None:
+            # Audio streams and event streams never end on their own; finish them
+            # instead of letting uvicorn wait on them.
+            if self.loop and not self.loop.is_closed():
+                self.loop.call_soon_threadsafe(audio.end_streams)
+                self.loop.call_soon_threadsafe(shutting_down.set)
+            self.should_exit = True
+
         def handle_exit(self, sig, frame):
-            loop = asyncio.get_event_loop()
-            loop.call_soon_threadsafe(audio.end_streams)
-            loop.call_soon_threadsafe(shutting_down.set)
+            self.request_stop()
             super().handle_exit(sig, frame)
 
-    config = uvicorn.Config(app, host=HOST, port=PORT, log_level="info", timeout_graceful_shutdown=3)
-    Server(config).run()
+    config = uvicorn.Config(app, host=HOST, port=PORT, log_level=log_level, timeout_graceful_shutdown=3)
+    return Server(config)
 
+
+def serve() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    check_settings()
+    make_server().run()
+
+
+main = serve
 
 if __name__ == "__main__":
-    main()
+    serve()

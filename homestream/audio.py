@@ -1,10 +1,12 @@
-"""Captures Mac audio, encodes it to MP3 with ffmpeg and fans it out to HTTP listeners.
+"""Captures what the computer is playing, encodes it to MP3 and fans it out to listeners.
 
-ffmpeg only runs while someone is listening (plus a short grace period), so
-the Mac isn't capturing audio, or showing the orange mic indicator, when
-nobody is tuned in.
+Everything runs inside this process: capture (homestream.capture) and MP3
+encoding (LAME, via lameenc) on a background thread, fan-out on the event
+loop. Capture only runs while someone is listening (plus a short grace
+period), so the computer isn't recording, or showing a microphone indicator,
+when nobody is tuned in.
 
-The stream is cut into whole MP3 frames (~26 ms each). A listener that falls
+The stream is cut into whole MP3 frames (~24 ms each). A listener that falls
 behind loses whole frames, which players skip cleanly; dropping arbitrary
 bytes instead would make the decoder play noise.
 """
@@ -14,28 +16,19 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
-import os
-import shutil
-import sys
+import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+
+from .capture import CHANNELS, TEST_DEVICES, CaptureError, open_source
 
 log = logging.getLogger("homestream.audio")
 
-READ_SIZE = 4096
-# Per-listener backlog in MP3 frames (~26 ms each): about 1.2 s. A listener
-# that falls further behind loses its oldest audio instead of drifting away
-# from live.
+# Per-listener backlog in MP3 frames (~24 ms each): about 1.2 s. A listener
+# that falls further behind loses its oldest audio instead of drifting away.
 QUEUE_FRAMES = 48
 IDLE_STOP_SECONDS = 15
-TEST_TONE = "test-tone"
-# A 440 Hz tone with a short 1 kHz beep at the start of every second, so
-# delay and dropouts can be measured from a recording of what a phone plays.
-TEST_SIGNAL = "test-signal"
-# ffmpeg's own macOS capture loses ~12% of BlackHole's audio (heard as crackle),
-# so real devices are captured by this PortAudio helper and piped into ffmpeg.
-CAPTURE_SCRIPT = Path(__file__).with_name("capture.py")
+TEST_TONE, TEST_SIGNAL = TEST_DEVICES
 
 _BITRATES = {  # kbps by bitrate index 1..14, for MPEG-1 and MPEG-2/2.5 Layer III
     3: (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320),
@@ -79,6 +72,21 @@ def split_mp3_frames(buffer: bytearray) -> list[tuple[bytes, float]]:
     return frames
 
 
+def make_encoder(rate: int, kbps: int):
+    import lameenc
+
+    encoder = lameenc.Encoder()
+    encoder.set_bit_rate(kbps)
+    encoder.set_in_sample_rate(rate)
+    encoder.set_channels(CHANNELS)
+    encoder.set_quality(2)  # 2 = high quality; encoding is far faster than real time anyway
+    return encoder
+
+
+def parse_kbps(bitrate: str) -> int:
+    return int(str(bitrate).lower().removesuffix("k"))
+
+
 @dataclass(eq=False)
 class Listener:
     id: str
@@ -93,50 +101,24 @@ class AudioBroadcaster:
         self.bitrate = bitrate
         # Seconds of recent audio sent to a new listener straight away.
         self.prebuffer = prebuffer
-        self._recent: collections.deque = collections.deque()
         self.last_error: str | None = None
+        self.capture_starts = 0
+        self._recent: collections.deque = collections.deque()
         self._listeners: set[Listener] = set()
         # Browsers may open the same stream twice (Safari probes first), so the
         # timing for an id comes from whichever connection is actually receiving audio.
         self._by_id: dict[str, Listener] = {}
-        self._proc: asyncio.subprocess.Process | None = None
-        self._capture: asyncio.subprocess.Process | None = None
+        self._source = None
         self._pump_task: asyncio.Task | None = None
         self._idle_stop: asyncio.TimerHandle | None = None
-
-    def capture_command(self) -> list[str] | None:
-        """The PortAudio capture process feeding ffmpeg, or None for test sources."""
-        if self.device in (TEST_TONE, TEST_SIGNAL):
-            return None
-        return [sys.executable, str(CAPTURE_SCRIPT), self.device]
-
-    def ffmpeg_args(self, rate: int = 44100) -> list[str]:
-        ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-        if self.device == TEST_TONE:
-            source = ["-re", "-readrate_initial_burst", "0", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-af", "volume=0.2"]
-        elif self.device == TEST_SIGNAL:
-            expr = "0.2*sin(2*PI*440*t)*lt(mod(t\\,1)\\,0.9)+0.5*sin(2*PI*1000*t)*lt(mod(t\\,1)\\,0.05)"
-            # No initial burst: real-time from the first sample, like a real capture.
-            source = ["-re", "-readrate_initial_burst", "0", "-f", "lavfi", "-i", f"aevalsrc={expr}:s=44100"]
-        else:
-            source = ["-f", "s16le", "-ar", str(rate), "-ac", "2", "-i", "pipe:0"]
-        return [
-            ffmpeg, "-hide_banner", "-loglevel", "error",
-            *source,
-            "-ac", "2", "-ar", str(rate),
-            "-c:a", "libmp3lame", "-b:a", self.bitrate,
-            "-flush_packets", "1",
-            # Bare frames: no ID3 tag or Xing header that could be mistaken for audio.
-            "-id3v2_version", "0", "-write_xing", "0",
-            "-f", "mp3", "pipe:1",
-        ]
 
     def status(self) -> dict:
         return {
             "device": self.device,
             "bitrate": self.bitrate,
             "listeners": len(self._listeners),
-            "capturing": self._proc is not None and self._proc.returncode is None,
+            "capturing": self._source is not None,
+            "capture_starts": self.capture_starts,
             "error": self.last_error,
         }
 
@@ -149,7 +131,7 @@ class AudioBroadcaster:
 
     async def listen(self, listener_id: str | None = None):
         """Async iterator of MP3 frames for one listener."""
-        listener = Listener(listener_id or f"anon-{id(object())}-{time.monotonic_ns()}")
+        listener = Listener(listener_id or f"anon-{time.monotonic_ns()}")
         self._add(listener)
         try:
             while (item := await listener.queue.get()) is not None:
@@ -180,14 +162,9 @@ class AudioBroadcaster:
 
     def _stop_if_idle(self) -> None:
         self._idle_stop = None
-        if not self._listeners and self._proc and self._proc.returncode is None:
+        if not self._listeners and self._source is not None:
             log.info("no listeners for %ss, stopping capture", IDLE_STOP_SECONDS)
-            self._terminate()
-
-    def _terminate(self) -> None:
-        for p in (self._capture, self._proc):
-            if p and p.returncode is None:
-                p.terminate()
+            self._source.stop()
 
     def _broadcast(self, frame: bytes | None, duration: float = 0.0) -> None:
         item = None if frame is None else (time.time(), frame)
@@ -207,74 +184,57 @@ class AudioBroadcaster:
         while self._listeners:
             started = loop.time()
             try:
-                proc = await self._start_processes()
-            except (OSError, ValueError, ImportError) as e:
-                self.last_error = str(e) or type(e).__name__
-                log.error("can't start capture: %s", self.last_error)
+                source = await asyncio.to_thread(open_source, self.device)
+                encoder = make_encoder(source.rate, parse_kbps(self.bitrate))
+            except (CaptureError, ImportError, ValueError) as e:
+                self.last_error = str(e)
+                log.error("can't start capture: %s", e)
                 await asyncio.sleep(5)
                 continue
-            stderr_tasks = [asyncio.create_task(self._watch_stderr(p)) for p in (proc, self._capture) if p]
+            self._source = source
+            self.capture_starts += 1
+            log.info("capturing %r at %d Hz", self.device, source.rate)
+            mp3_chunks: asyncio.Queue = asyncio.Queue()
+            threading.Thread(target=self._encode, args=(source, encoder, loop, mp3_chunks), daemon=True).start()
             pending = bytearray()
             got_audio = False
-            while chunk := await proc.stdout.read(READ_SIZE):
+            while (chunk := await mp3_chunks.get()) is not None:
+                if isinstance(chunk, Exception):
+                    self.last_error = str(chunk)
+                    log.warning("capture failed: %s", chunk)
+                    continue
                 if not got_audio:
                     got_audio = True
                     self.last_error = None
                 pending += chunk
                 for frame, duration in split_mp3_frames(pending):
                     self._broadcast(frame, duration)
-            await proc.wait()
+            self._source = None
             self._recent.clear()
-            if self._capture and self._capture.returncode is None:
-                self._capture.terminate()
-            await asyncio.gather(*stderr_tasks)
-            self._proc = self._capture = None
             if not self._listeners:
                 break
             if loop.time() - started > 30:
                 backoff = 1.0
-            log.warning("capture exited (%s); restarting in %.0fs", proc.returncode, backoff)
+            log.warning("capture stopped; restarting in %.0fs", backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
-    async def _start_processes(self) -> asyncio.subprocess.Process:
-        """Start ffmpeg (and the capture helper feeding it); return ffmpeg."""
-        capture_cmd = self.capture_command()
-        if capture_cmd is None:
-            args = self.ffmpeg_args()
-            log.info("starting encoder: %s", " ".join(args))
-            self._proc = await asyncio.create_subprocess_exec(
-                *args, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            return self._proc
-
-        from capture import device_rate
-
+    @staticmethod
+    def _encode(source, encoder, loop: asyncio.AbstractEventLoop, out: asyncio.Queue) -> None:
+        """Background thread: capture -> MP3, handing encoded bytes to the event loop."""
         try:
-            rate = device_rate(self.device)
-        except ValueError:
-            raise ValueError(f"Audio device not found: {self.device}") from None
-        args = self.ffmpeg_args(rate)
-        log.info("starting capture of %r at %d Hz", self.device, rate)
-        read_fd, write_fd = os.pipe()
-        try:
-            self._capture = await asyncio.create_subprocess_exec(
-                *capture_cmd, stdin=asyncio.subprocess.DEVNULL, stdout=write_fd, stderr=asyncio.subprocess.PIPE
-            )
-            self._proc = await asyncio.create_subprocess_exec(
-                *args, stdin=read_fd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+            for pcm in source.blocks():
+                mp3 = encoder.encode(pcm)
+                if mp3:
+                    loop.call_soon_threadsafe(out.put_nowait, bytes(mp3))
+        except Exception as e:
+            loop.call_soon_threadsafe(out.put_nowait, e)
         finally:
-            os.close(read_fd)
-            os.close(write_fd)
-        return self._proc
-
-    async def _watch_stderr(self, proc: asyncio.subprocess.Process) -> None:
-        async for line in proc.stderr:
-            text = line.decode(errors="replace").strip()
-            if text:
-                self.last_error = text
-                log.warning("ffmpeg: %s", text)
+            source.stop()
+            try:
+                loop.call_soon_threadsafe(out.put_nowait, None)
+            except RuntimeError:
+                pass  # the event loop has already shut down
 
     def end_streams(self) -> None:
         """Finish every listener's response so the server can shut down promptly."""
@@ -285,6 +245,7 @@ class AudioBroadcaster:
             self._idle_stop.cancel()
         self._listeners.clear()
         self._by_id.clear()
-        self._terminate()
+        if self._source is not None:
+            self._source.stop()
         if self._pump_task:
             await asyncio.gather(self._pump_task, return_exceptions=True)

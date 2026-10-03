@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SERVER_DIR = ROOT / "control-server"
-sys.path.insert(0, str(SERVER_DIR))
+sys.path.insert(0, str(ROOT))
+SERVER_CMD = [sys.executable, "-m", "homestream", "serve"]
 # Tests that import the server module must not pick up the developer's real .env.
 os.environ["HOMESTREAM_ENV_FILE"] = str(ROOT / "tests" / "does-not-exist.env")
 
@@ -87,7 +87,7 @@ def start_server(**env_overrides: str) -> Server:
     # A file, not a pipe: an unread pipe would eventually block the server's logging.
     log = tempfile.TemporaryFile()
     proc = subprocess.Popen(
-        [sys.executable, str(SERVER_DIR / "main.py")], env=env, stdout=log, stderr=subprocess.STDOUT
+        SERVER_CMD, env=env, stdout=log, stderr=subprocess.STDOUT, cwd=ROOT
     )
     server = Server(port, proc)
     deadline = time.monotonic() + 15
@@ -107,7 +107,10 @@ def start_server(**env_overrides: str) -> Server:
 def stop_server(server: Server, timeout: float = 10) -> float:
     """SIGINT (like Ctrl+C) and return how long shutdown took."""
     started = time.monotonic()
-    server.proc.send_signal(signal.SIGINT)
+    if os.name == "nt":
+        server.proc.terminate()  # Windows has no SIGINT for child processes
+    else:
+        server.proc.send_signal(signal.SIGINT)
     try:
         server.proc.wait(timeout)
     except subprocess.TimeoutExpired:

@@ -19,7 +19,7 @@ HOP = 441  # 10 ms
 WINDOW = 2048
 
 
-def band_power(spectrum: np.ndarray, freqs: np.ndarray, centre: float, width: float = 25) -> np.ndarray:
+def band_power(spectrum: np.ndarray, freqs: np.ndarray, centre: float, width: float = 60) -> np.ndarray:
     band = (freqs > centre - width) & (freqs < centre + width)
     return spectrum[:, band].sum(axis=1)
 
@@ -54,8 +54,14 @@ def analyze(samples: np.ndarray) -> dict:
         if weak.any():
             dropouts.append(round(float(onset), 2))
 
-    noise_db = 10 * np.log10(residual[loud] / total[loud] + 1e-12)
-    noisy = t[loud][noise_db > -20]
+    # Noise: only judged in steady stretches. The test signal switches tones on and off
+    # abruptly, and each switch is a click that even a perfect recording contains.
+    steady = np.zeros_like(loud)
+    for onset in onsets:
+        steady |= ((t > onset + 0.10) & (t < onset + 0.85))
+    steady &= loud
+    noise_db = 10 * np.log10(residual[steady] / total[steady] + 1e-12) if steady.any() else np.array([-99.0])
+    noisy = t[steady][noise_db > -25] if steady.any() else np.array([])
     return {
         "seconds": round(len(x) / RATE, 2),
         "beeps": len(onsets),

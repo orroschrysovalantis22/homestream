@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from conftest import ROOT, SERVER_DIR, TOKEN, start_server, stop_server, wait_for
+from conftest import ROOT, SERVER_CMD, TOKEN, start_server, stop_server, wait_for
 
 
 def test_page_is_public_and_uncached(server):
@@ -110,19 +110,20 @@ def test_stream_is_live_mp3(server):
 
 
 def test_two_listeners_share_one_capture(server):
+    before = server.request("GET", "/status", token=TOKEN).json()["stream"]["capture_starts"]
     a, b = server.open_stream(), server.open_stream()
     a.read(8000)
     b.read(8000)
-    assert server.listeners() == 2
-    capture = subprocess.run(["pgrep", "-f", "lavfi -i sine"], capture_output=True, text=True).stdout.split()
-    assert len(capture) == 1
+    stream = server.request("GET", "/status", token=TOKEN).json()["stream"]
+    assert stream["listeners"] == 2
+    assert stream["capture_starts"] - before <= 1  # one capture feeds both (or an already running one)
     a.close()
     b.close()
 
 
 def test_refuses_to_start_without_a_real_token():
     result = subprocess.run(
-        [sys.executable, str(SERVER_DIR / "main.py")],
+        SERVER_CMD, cwd=ROOT,
         env={"PATH": "/usr/bin:/bin", "HOMESTREAM_ENV_FILE": str(ROOT / "tests" / "nope.env"), "HOMESTREAM_TOKEN": "short"},
         capture_output=True, text=True, timeout=20,
     )
@@ -130,6 +131,7 @@ def test_refuses_to_start_without_a_real_token():
     assert "HOMESTREAM_TOKEN" in result.stderr
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Ctrl+C is a POSIX signal here")
 def test_ctrl_c_with_a_listener_exits_promptly():
     srv = start_server()
     resp = srv.open_stream()
@@ -161,7 +163,7 @@ def make_request(client: str, server: str):
     ],
 )
 def test_only_direct_tailscale_connections_skip_the_token(client, server, trusted):
-    import main
+    from homestream import server as main
 
     assert main.via_tailscale(make_request(client, server)) is trusted
 
@@ -182,7 +184,7 @@ def test_runs_without_a_token_but_then_only_tailscale_gets_in():
 
 def test_refuses_to_start_when_nobody_could_connect():
     result = subprocess.run(
-        [sys.executable, str(SERVER_DIR / "main.py")],
+        SERVER_CMD, cwd=ROOT,
         env={"PATH": "/usr/bin:/bin", "HOMESTREAM_ENV_FILE": str(ROOT / "tests" / "nope.env"),
              "HOMESTREAM_TOKEN": "", "HOMESTREAM_TRUST_TAILSCALE": "0"},
         capture_output=True, text=True, timeout=20,

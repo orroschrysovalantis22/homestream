@@ -1,23 +1,70 @@
-"""Unit tests for the audio fan-out, the player backends and the preflight checks."""
+"""Unit tests: audio pipeline, players on every OS (with fakes), settings and startup checks."""
 
 import asyncio
-import shutil
 import subprocess
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-import audio_stream
-import preflight
-from audio_stream import QUEUE_FRAMES, AudioBroadcaster
-from mac_control import ControlError, DryRunController, SpotifyController, make_controller
+from homestream import audio as audio_stream, preflight
+from homestream.audio import QUEUE_FRAMES, AudioBroadcaster, Listener, make_encoder, mp3_frame_info, split_mp3_frames
+from homestream.capture import RATE, CaptureError, GeneratedSource, open_source
+from homestream.players import ControlError, DryRunController, make_controller
 
-needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
-spotify_running = subprocess.run(["pgrep", "-xq", "Spotify"]).returncode == 0
+ROOT = Path(__file__).resolve().parent.parent
+mac_only = pytest.mark.skipif(sys.platform != "darwin", reason="macOS backend")
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="uses a shell-script fake")
+spotify_running = sys.platform == "darwin" and subprocess.run(["pgrep", "-xq", "Spotify"]).returncode == 0
 
 
-# --- audio fan-out ---------------------------------------------------------------
+# --- capture and encoding ------------------------------------------------------------
 
-@needs_ffmpeg
+def test_test_source_is_real_time_48k_stereo():
+    source = GeneratedSource("test-tone")
+    start = time.monotonic()
+    data = bytearray()
+    for block in source.blocks():
+        data += block
+        if len(data) >= RATE * 4 // 5:  # 0.2 s of 16-bit stereo
+            break
+    source.stop()
+    elapsed = time.monotonic() - start
+    assert len(data) == RATE * 4 // 5
+    assert 0.15 < elapsed < 0.5  # paced like a live capture, not dumped at once
+
+
+def test_encoder_produces_whole_mp3_frames():
+    source = GeneratedSource("test-signal")
+    encoder = make_encoder(source.rate, 192)
+    mp3 = bytearray()
+    for i, block in enumerate(source.blocks()):
+        mp3 += encoder.encode(block)
+        if i == 49:  # 1 s
+            break
+    source.stop()
+    frames = split_mp3_frames(mp3)
+    assert 38 <= len(frames) <= 42  # 1152 samples per frame at 48 kHz = 24 ms
+    assert {len(f) for f, _ in frames} <= {576, 577}  # 192 kbps at 48 kHz
+    assert all(abs(d - 1152 / 48000) < 1e-9 for _, d in frames)
+
+
+def test_test_devices_need_no_hardware():
+    assert isinstance(open_source("test-tone"), GeneratedSource)
+    assert isinstance(open_source("test-signal"), GeneratedSource)
+
+
+@mac_only
+def test_missing_mac_device_is_a_clear_error():
+    with pytest.raises(CaptureError, match="not found"):
+        open_source("No Such Device 123")
+
+
+# --- audio fan-out -----------------------------------------------------------------------
+
 def test_capture_runs_only_while_someone_listens(monkeypatch):
     monkeypatch.setattr(audio_stream, "IDLE_STOP_SECONDS", 0.3)
 
@@ -25,7 +72,7 @@ def test_capture_runs_only_while_someone_listens(monkeypatch):
         b = AudioBroadcaster("test-tone")
         assert not b.status()["capturing"]
         listener = b.listen()
-        assert await listener.__anext__()
+        assert await asyncio.wait_for(listener.__anext__(), 5)
         assert b.status()["capturing"]
         await listener.aclose()
         assert b.status()["listeners"] == 0
@@ -39,7 +86,6 @@ def test_capture_runs_only_while_someone_listens(monkeypatch):
     asyncio.run(scenario())
 
 
-@needs_ffmpeg
 def test_end_streams_finishes_every_listener():
     async def scenario():
         b = AudioBroadcaster("test-tone")
@@ -59,19 +105,29 @@ def test_end_streams_finishes_every_listener():
     asyncio.run(scenario())
 
 
-def test_real_devices_are_captured_by_portaudio_and_encoded_by_ffmpeg():
-    b = AudioBroadcaster("BlackHole 2ch", "128k")
-    capture = b.capture_command()
-    assert capture[-2:] == [str(audio_stream.CAPTURE_SCRIPT), "BlackHole 2ch"]
-    args = b.ffmpeg_args(48000)
-    assert "avfoundation" not in args  # ffmpeg's own capture drops audio
-    assert args[args.index("-i") + 1] == "pipe:0"
-    assert args[args.index("-b:a") + 1] == "128k"
-    assert args[-2:] == ["mp3", "pipe:1"]
-    assert AudioBroadcaster("test-tone").capture_command() is None
+def test_split_mp3_frames_keeps_partial_frames_for_later():
+    header = bytes([0xFF, 0xFB, 0xB0, 0x00])  # MPEG-1 Layer III, 192 kbps, 44.1 kHz, no padding
+    length, duration = mp3_frame_info(header)
+    assert length == 626 and abs(duration - 1152 / 44100) < 1e-9
+    frame = header + bytes(length - 4)
+    buffer = bytearray(b"junk" + frame + frame + frame[:100])
+    frames = split_mp3_frames(buffer)
+    assert [f for f, _ in frames] == [frame, frame]
+    assert bytes(buffer) == frame[:100]  # the incomplete third frame waits for more data
 
 
-# --- player backends ---------------------------------------------------------------
+def test_slow_listener_drops_whole_frames_and_counts_them():
+    b = AudioBroadcaster("test-tone")
+    listener = Listener("slow")
+    b._listeners.add(listener)
+    for i in range(QUEUE_FRAMES + 10):
+        b._broadcast(bytes([i]), 0.024)
+    assert listener.queue.qsize() == QUEUE_FRAMES
+    assert listener.queue.get_nowait()[1] == bytes([10])
+    assert abs(listener.dropped_seconds - 10 * 0.024) < 1e-9
+
+
+# --- players: shared -------------------------------------------------------------------
 
 def test_unknown_player_is_a_config_error():
     with pytest.raises(SystemExit, match="HOMESTREAM_PLAYER"):
@@ -86,83 +142,20 @@ def test_dryrun_tracks_state():
         await c.command("toggle")
         assert (await c.status()).state == "paused"
         await c.command("next")
-        assert (await c.status()).state == "paused"
+        status = await c.status()
+        assert status.state == "paused" and status.title == "Test tone 2"
 
     asyncio.run(scenario())
 
 
-@pytest.mark.skipif(spotify_running, reason="Spotify is running")
-def test_spotify_not_running():
-    async def scenario():
-        status = await SpotifyController().status()
-        assert status.state == "not-running"
-        with pytest.raises(ControlError, match="not running"):
-            await SpotifyController().command("next")
+# --- players: macOS (Now Playing via a fake media-control; Spotify) ----------------------
 
-    asyncio.run(scenario())
+FAKE_MEDIA_CONTROL = str(Path(__file__).parent / "fakes" / "media-control")
 
 
-# --- preflight -------------------------------------------------------------------------
-
-def test_preflight_passes_with_test_tone(monkeypatch, capsys):
-    monkeypatch.setenv("HOMESTREAM_AUDIO_DEVICE", "test-tone")
-    monkeypatch.setenv("HOMESTREAM_PLAYER", "dryrun")
-    assert preflight.main() == 0
-    assert "audio source: test-tone" in capsys.readouterr().out
-
-
-@needs_ffmpeg
-def test_preflight_missing_device_fails_without_opening_settings(monkeypatch, capsys):
-    opened = []
-    real_run = subprocess.run
-
-    def run(cmd, *args, **kwargs):
-        if cmd[0] == "open":
-            opened.append(cmd)
-            return None
-        return real_run(cmd, *args, **kwargs)
-
-    monkeypatch.setattr(preflight.subprocess, "run", run)
-    assert preflight.check_capture("No Such Device 123") is False
-    assert "Audio device not found" in capsys.readouterr().out
-    assert opened == []
-
-
-# --- MP3 framing ---------------------------------------------------------------------
-
-def test_split_mp3_frames_keeps_partial_frames_for_later():
-    from audio_stream import mp3_frame_info, split_mp3_frames
-
-    header = bytes([0xFF, 0xFB, 0xB0, 0x00])  # MPEG-1 Layer III, 192 kbps, 44.1 kHz, no padding
-    length, duration = mp3_frame_info(header)
-    assert length == 626 and abs(duration - 1152 / 44100) < 1e-9
-    frame = header + bytes(length - 4)
-    buffer = bytearray(b"junk" + frame + frame + frame[:100])
-    frames = split_mp3_frames(buffer)
-    assert [f for f, _ in frames] == [frame, frame]
-    assert bytes(buffer) == frame[:100]  # the incomplete third frame waits for more data
-
-
-def test_slow_listener_drops_whole_frames_and_counts_them():
-    from audio_stream import Listener
-
-    b = AudioBroadcaster("test-tone")
-    listener = Listener("slow")
-    b._listeners.add(listener)
-    for i in range(QUEUE_FRAMES + 10):
-        b._broadcast(bytes([i]), 0.026)
-    assert listener.queue.qsize() == QUEUE_FRAMES
-    assert listener.queue.get_nowait()[1] == bytes([10])
-    assert abs(listener.dropped_seconds - 10 * 0.026) < 1e-9
-
-
-# --- Now Playing backend (with a fake media-control) ---------------------------------
-
-FAKE_MEDIA_CONTROL = str(__import__("pathlib").Path(__file__).parent / "fakes" / "media-control")
-
-
+@posix_only
 def test_now_playing_reads_track_info_and_sends_commands(tmp_path, monkeypatch):
-    from mac_control import NowPlayingController
+    from homestream.players.macos import NowPlayingController
 
     log = tmp_path / "commands.log"
     monkeypatch.setenv("FAKE_MEDIA_LOG", str(log))
@@ -190,9 +183,191 @@ def test_now_playing_reads_track_info_and_sends_commands(tmp_path, monkeypatch):
 
 
 def test_now_playing_with_nothing_playing_is_idle():
-    from mac_control import NowPlayingController
+    from homestream.players.macos import NowPlayingController
 
     c = NowPlayingController(FAKE_MEDIA_CONTROL)
     c._update({})
     status = asyncio.run(c.status())
     assert status.state == "idle" and status.title is None and status.artwork is None
+
+
+@mac_only
+@pytest.mark.skipif(spotify_running, reason="Spotify is running")
+def test_spotify_not_running():
+    from homestream.players.macos import SpotifyController
+
+    async def scenario():
+        status = await SpotifyController().status()
+        assert status.state == "not-running"
+        with pytest.raises(ControlError, match="not running"):
+            await SpotifyController().command("next")
+
+    asyncio.run(scenario())
+
+
+# --- players: Linux (MPRIS) ----------------------------------------------------------------
+
+def mpris_line(**fields):
+    from homestream.players.linux import FIELDS
+
+    return "\t".join(fields.get(f, "") for f in FIELDS)
+
+
+def test_mpris_reads_playerctl_output(tmp_path):
+    from homestream.players.linux import MprisController
+
+    art = tmp_path / "cover.png"
+    art.write_bytes(b"\x89PNG fake")
+    c = MprisController("playerctl")
+    c.update(mpris_line(**{
+        "status": "Playing", "playerName": "spotify", "xesam:title": "Song", "xesam:artist": "Band",
+        "xesam:album": "Album", "mpris:artUrl": f"file://{art}", "mpris:length": "215000000", "position": "12500000",
+    }))
+    s = asyncio.run(c.status())
+    assert (s.state, s.title, s.artist, s.album, s.app) == ("playing", "Song", "Band", "Album", "Spotify")
+    assert s.duration == 215.0 and s.elapsed == 12.5 and s.elapsed_at
+    assert s.artwork == f"/artwork?v={c.artwork_id}" and c.artwork == ("image/png", b"\x89PNG fake")
+
+
+def test_mpris_passes_web_artwork_through_and_goes_idle():
+    from homestream.players.linux import MprisController
+
+    c = MprisController("playerctl")
+    c.update(mpris_line(**{"status": "Paused", "playerName": "firefox.instance_1_23", "xesam:title": "Video",
+                           "mpris:artUrl": "https://i.example.com/cover.jpg"}))
+    s = asyncio.run(c.status())
+    assert (s.state, s.app, s.artwork) == ("paused", "Firefox", "https://i.example.com/cover.jpg")
+    c.update("")  # the player went away
+    assert asyncio.run(c.status()).state == "idle"
+
+
+@posix_only
+def test_mpris_commands_use_playerctl_verbs(tmp_path):
+    from homestream.players.linux import MprisController
+
+    log = tmp_path / "log"
+    fake = tmp_path / "playerctl"
+    fake.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
+    fake.chmod(0o755)
+    c = MprisController(str(fake), player="spotify")
+
+    async def scenario():
+        for cmd in ("play", "pause", "toggle", "next", "prev"):
+            await c.command(cmd)
+
+    asyncio.run(scenario())
+    assert log.read_text().splitlines() == [
+        "--player=spotify play", "--player=spotify pause", "--player=spotify play-pause",
+        "--player=spotify next", "--player=spotify previous",
+    ]
+
+
+# --- players: Windows (with fake WinRT objects) ----------------------------------------
+
+def test_windows_session_is_read_into_plain_values():
+    from homestream.players.windows import read_session
+
+    updated = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    session = SimpleNamespace(
+        source_app_user_model_id="Spotify.exe",
+        get_playback_info=lambda: SimpleNamespace(playback_status=4),
+        get_timeline_properties=lambda: SimpleNamespace(
+            start_time=timedelta(0), end_time=timedelta(seconds=200), position=timedelta(seconds=42),
+            last_updated_time=updated),
+    )
+    props = SimpleNamespace(title="Song", artist="Band", album_title="", thumbnail=object())
+    info = read_session(session, props)
+    assert info == {"title": "Song", "artist": "Band", "album": None, "state": "playing", "app": "Spotify",
+                    "duration": 200.0, "elapsed": 42.0, "elapsed_at": updated.timestamp(), "has_thumbnail": True}
+
+
+@pytest.mark.parametrize("app_id,name", [
+    ("Spotify.exe", "Spotify"), ("Chrome", "Chrome"), ("MSEdge", "Edge"), ("Brave", "Brave"),
+    ("308046B0AF4A39CB", "Firefox"), ("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic", "Media Player"),
+    ("SomeNewPlayer.exe", "Somenewplayer"), (None, None),
+])
+def test_windows_app_names(app_id, name):
+    from homestream.players.windows import app_name
+
+    assert app_name(app_id) == name
+
+
+# --- settings and addresses ------------------------------------------------------------
+
+def test_settings_file_is_created_with_a_private_random_token(tmp_path):
+    from homestream.config import ensure_env_file, load_env_file
+
+    path = ensure_env_file(tmp_path / "homestream.env")
+    text = path.read_text()
+    token = next(line.split("=", 1)[1] for line in text.splitlines() if line.startswith("HOMESTREAM_TOKEN="))
+    assert len(token) == 48
+    if sys.platform != "win32":
+        assert path.stat().st_mode & 0o777 == 0o600
+    assert ensure_env_file(path).read_text() == text  # never overwritten
+    assert load_env_file(path) == path
+
+
+def test_phone_address_prefers_tailscale(monkeypatch):
+    from homestream import system
+
+    monkeypatch.setattr(system, "tailscale_status", lambda: {"ip": "100.64.0.10", "name": "my-mac"})
+    assert system.phone_address(8765) == {"via": "tailscale", "url": "http://100.64.0.10:8765",
+                                          "typed": "100.64.0.10:8765", "name": "my-mac"}
+    monkeypatch.setattr(system, "tailscale_status", lambda: {})
+    monkeypatch.setattr(system, "lan_ip", lambda: "192.168.1.20")
+    monkeypatch.setenv("HOMESTREAM_TOKEN", "t" * 20)
+    assert system.phone_address(8765)["url"] == "http://192.168.1.20:8765/#token=" + "t" * 20
+
+
+def test_cli_version_and_config(tmp_path, monkeypatch, capsys):
+    from homestream.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["--version"])
+    assert "homestream" in capsys.readouterr().out
+    monkeypatch.setenv("HOMESTREAM_ENV_FILE", str(tmp_path / "x.env"))
+    assert main(["config"]) == 0
+    assert (tmp_path / "x.env").exists()
+
+
+# --- startup checks --------------------------------------------------------------------
+
+def test_preflight_passes_with_test_tone(capsys):
+    assert preflight.run("test-tone", "dryrun") is True
+    assert "audio source: test-tone" in capsys.readouterr().out
+
+
+@mac_only
+def test_preflight_missing_device_fails_without_opening_settings(monkeypatch, capsys):
+    opened = []
+    real_run = subprocess.run
+
+    def run(cmd, *args, **kwargs):
+        if cmd[0] == "open":
+            opened.append(cmd)
+            return None
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(preflight.subprocess, "run", run)
+    assert preflight.check_capture("No Such Device 123") is False
+    assert "not found" in capsys.readouterr().out
+    assert opened == []
+
+
+def test_test_signal_analyser_on_generated_audio():
+    sys.path.insert(0, str(ROOT / "tools"))
+    import numpy as np
+    from analyze_test_signal import analyze
+
+    source = GeneratedSource("test-signal")
+    pcm = bytearray()
+    for block in source.blocks():
+        pcm += block
+        if len(pcm) >= RATE * 4 * 3:
+            break
+    source.stop()
+    stereo = np.frombuffer(bytes(pcm), dtype="<i2").reshape(-1, 2)
+    mono_44k = stereo[:, 0][:: 1]  # analyser assumes 44.1 kHz; resample by index
+    idx = (np.arange(int(len(mono_44k) * 44100 / RATE)) * RATE / 44100).astype(int)
+    report = analyze(mono_44k[idx])
+    assert report["beeps"] >= 2 and not report["timing_jumps"] and not report["tone_dropouts_at"]

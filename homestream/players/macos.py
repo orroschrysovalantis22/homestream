@@ -1,4 +1,4 @@
-"""Playback control for macOS.
+"""Playback control on macOS.
 
 Backends:
   * NowPlayingController - talks to macOS's system-wide "Now Playing" through
@@ -11,8 +11,8 @@ Backends:
                            permission, and play and pause both toggle.
 
 HOMESTREAM_PLAYER picks one: "auto" (Now Playing when media-control is
-installed, otherwise Spotify app / media keys), "nowplaying", "spotify",
-"browser" (media keys) or "dryrun" (a fake player, for development).
+installed, otherwise Spotify app / media keys), "nowplaying", "spotify" or
+"browser" (media keys).
 """
 
 from __future__ import annotations
@@ -21,39 +21,12 @@ import asyncio
 import base64
 import hashlib
 import json
-import logging
 import os
 import shutil
 import time
-from dataclasses import asdict, dataclass
-from datetime import datetime
 from functools import lru_cache
 
-log = logging.getLogger("homestream.control")
-
-COMMANDS = ("play", "pause", "toggle", "next", "prev")
-
-
-@dataclass
-class PlayerStatus:
-    backend: str
-    state: str = "unknown"  # playing | paused | stopped | idle | unknown | not-running
-    title: str | None = None
-    artist: str | None = None
-    album: str | None = None
-    artwork: str | None = None  # URL
-    warning: str | None = None
-    app: str | None = None  # which app is playing, e.g. "Brave Browser"
-    duration: float | None = None  # seconds
-    elapsed: float | None = None  # seconds into the track...
-    elapsed_at: float | None = None  # ...as of this Unix time
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-class ControlError(RuntimeError):
-    pass
+from . import ControlError, PlayerStatus, iso_to_epoch as _epoch, log, to_float as _float
 
 
 async def _osascript(script: str, timeout: float = 5.0) -> str:
@@ -70,13 +43,6 @@ async def _osascript(script: str, timeout: float = 5.0) -> str:
     if proc.returncode != 0:
         raise ControlError(err.decode().strip() or f"osascript exited {proc.returncode}")
     return out.decode().strip()
-
-
-def _float(value, scale: float = 1.0) -> float | None:
-    try:
-        return float(str(value).replace(",", ".")) / scale
-    except (TypeError, ValueError):
-        return None
 
 
 async def spotify_running() -> bool:
@@ -195,43 +161,6 @@ class MediaKeyController:
         return PlayerStatus(self.name, warning=warning)
 
 
-class DryRunController:
-    """A pretend player, so the page can be developed without real playback."""
-
-    name = "dryrun"
-    tracks = 3
-    duration = 180.0
-
-    def __init__(self) -> None:
-        self._state = "paused"
-        self._track = 1
-        self._elapsed = 0.0
-        self._since = time.time()
-
-    def _position(self) -> float:
-        if self._state == "playing":
-            return self._elapsed + time.time() - self._since
-        return self._elapsed
-
-    async def command(self, cmd: str) -> None:
-        log.info("dryrun: %s", cmd)
-        self._elapsed, self._since = self._position(), time.time()
-        if cmd == "toggle":
-            cmd = "pause" if self._state == "playing" else "play"
-        if cmd in ("play", "pause"):
-            self._state = "playing" if cmd == "play" else "paused"
-        elif cmd in ("next", "prev"):
-            step = 1 if cmd == "next" else -1
-            self._track = (self._track - 1 + step) % self.tracks + 1
-            self._elapsed = 0.0
-
-    async def status(self) -> PlayerStatus:
-        return PlayerStatus(
-            self.name, self._state, title=f"Test tone {self._track}", artist="HomeStream",
-            app="Dry run", duration=self.duration, elapsed=self._position(), elapsed_at=time.time(),
-        )
-
-
 @lru_cache(maxsize=32)
 def app_display_name(bundle_id: str | None) -> str | None:
     """'com.brave.Browser' -> 'Brave Browser', using the installed app's name."""
@@ -246,15 +175,6 @@ def app_display_name(bundle_id: str | None) -> str | None:
     except ImportError:
         pass
     return bundle_id.rsplit(".", 1)[-1]
-
-
-def _epoch(timestamp: str | None) -> float | None:
-    if not timestamp:
-        return None
-    try:
-        return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
 
 
 class NowPlayingController:
@@ -396,22 +316,17 @@ def media_control_path() -> str | None:
     return None
 
 
-def make_controller(kind: str):
+def make_mac_controller(kind: str):
     if kind in ("auto", "nowplaying"):
         binary = media_control_path()
         if binary:
             return NowPlayingController(binary)
         if kind == "nowplaying":
             raise SystemExit("HOMESTREAM_PLAYER=nowplaying needs media-control: brew install media-control")
-    controllers = {
-        "auto": AutoController,
-        "spotify": SpotifyController,
-        "browser": MediaKeyController,
-        "dryrun": DryRunController,
-    }
+    controllers = {"auto": AutoController, "spotify": SpotifyController, "browser": MediaKeyController}
     try:
         return controllers[kind]()
     except KeyError:
         raise SystemExit(
-            f"HOMESTREAM_PLAYER must be one of auto, nowplaying, {', '.join(list(controllers)[1:])} (got {kind!r})"
+            f"HOMESTREAM_PLAYER must be one of auto, nowplaying, spotify, browser, dryrun on macOS (got {kind!r})"
         )

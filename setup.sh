@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One-time HomeStream setup for macOS. Safe to re-run.
+# One-time HomeStream setup for macOS and Linux (on Windows, run setup.ps1). Safe to re-run.
 #
-#   ./setup.sh             HTTP stream (works in any phone browser)
-#   ./setup.sh --snapcast  also install Snapcast, for the Snapdroid app / multi-room
+#   ./setup.sh             what you need to stream to a phone
+#   ./setup.sh --snapcast  also Snapcast, for the Snapdroid app / multi-room
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,99 +27,127 @@ ask() { # ask "question" -> 0 for yes (the default); no when not interactive
   read -r -p "    $1 [Y/n] " answer
   [[ ! "$answer" =~ ^[Nn] ]]
 }
+as_root() { if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
 
-[[ "$(uname -s)" == Darwin ]] || die "HomeStream's capture and control only work on macOS"
-command -v brew >/dev/null || die "Homebrew is required. Install it from https://brew.sh, then re-run ./setup.sh"
+# --- macOS ------------------------------------------------------------------------
+setup_macos() {
+  command -v brew >/dev/null || die "Homebrew is required. Install it from https://brew.sh, then re-run ./setup.sh"
 
-# --- Command-line tools -------------------------------------------------------
-step "Command-line tools"
-FORMULAE=(ffmpeg media-control switchaudio-osx qrencode)
-[[ $WITH_SNAPCAST == 1 ]] && FORMULAE+=(snapcast)
-for f in "${FORMULAE[@]}"; do
-  if brew list --formula "$f" >/dev/null 2>&1; then
-    ok "$f"
+  step "Command-line tools"
+  local formulae=(media-control switchaudio-osx)
+  [[ $WITH_SNAPCAST == 1 ]] && formulae+=(snapcast)
+  local f
+  for f in "${formulae[@]}"; do
+    if brew list --formula "$f" >/dev/null 2>&1; then ok "$f"; else brew install "$f"; fi
+  done
+
+  step "BlackHole (virtual audio device that carries the Mac's audio to HomeStream)"
+  if [[ -d /Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver ]]; then
+    ok "BlackHole 2ch installed"
   else
-    brew install "$f"
+    echo "    macOS has no built-in way to record what's playing; BlackHole adds one."
+    echo "    It's an audio driver, so macOS will ask for your password."
+    if ask "Install BlackHole 2ch with Homebrew now?"; then
+      brew install --cask blackhole-2ch
+      echo "    If it isn't picked up straight away: sudo killall coreaudiod (or restart the Mac)."
+    else
+      echo "    Skipped. Install it later with: brew install --cask blackhole-2ch"
+    fi
   fi
-done
+}
 
-# --- BlackHole ------------------------------------------------------------------
-step "BlackHole (virtual audio device that carries Mac audio to the relay)"
-if [[ -d /Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver ]]; then
-  ok "BlackHole 2ch installed"
-else
-  echo "    It's an audio driver, so macOS will ask for your password."
-  if ask "Install BlackHole 2ch with Homebrew now?"; then
-    brew install --cask blackhole-2ch
+# --- Linux ------------------------------------------------------------------------
+setup_linux() {
+  step "System packages"
+  echo "    playerctl (playback control), PulseAudio/PipeWire client library (capture), Python venv"
+  local snap=()
+  if command -v apt-get >/dev/null; then
+    [[ $WITH_SNAPCAST == 1 ]] && snap=(snapserver)
+    as_root apt-get update -qq
+    as_root apt-get install -y -qq python3 python3-venv python3-pip playerctl libpulse0 "${snap[@]}"
+  elif command -v dnf >/dev/null; then
+    [[ $WITH_SNAPCAST == 1 ]] && snap=(snapcast)
+    as_root dnf install -y -q python3 playerctl pulseaudio-libs "${snap[@]}"
+  elif command -v pacman >/dev/null; then
+    [[ $WITH_SNAPCAST == 1 ]] && snap=(snapcast)
+    as_root pacman -S --needed --noconfirm python playerctl libpulse "${snap[@]}"
+  elif command -v zypper >/dev/null; then
+    as_root zypper --non-interactive install python3 playerctl libpulse0
   else
-    echo "    Skipped. Install it later with: brew install --cask blackhole-2ch"
+    echo "    ! Unknown package manager: install Python 3.10+, playerctl and libpulse yourself."
   fi
-fi
-# ffmpeg exits non-zero after listing devices; don't let pipefail turn that into "missing".
-DEVICES="$(ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
-if grep -qF "] BlackHole 2ch" <<<"$DEVICES"; then
-  ok "BlackHole 2ch visible to ffmpeg"
-else
-  echo "    ! BlackHole isn't visible yet. If you just installed it, restart the Mac."
-fi
+  ok "system packages"
+  echo "    No virtual audio device needed: HomeStream records what your speakers play."
+}
 
-# --- Python ---------------------------------------------------------------------
+case "$(uname -s)" in
+  Darwin) setup_macos ;;
+  Linux) setup_linux ;;
+  *) die "this script is for macOS and Linux; on Windows run setup.ps1" ;;
+esac
+
+# --- Python -----------------------------------------------------------------------
 step "Python environment"
-PY=python3
-if ! command -v python3 >/dev/null || ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
-  brew install python
-  PY="$(brew --prefix)/bin/python3"
+PY="$(command -v python3 || true)"
+if [[ -z "$PY" ]] || ! "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+  if [[ "$(uname -s)" == Darwin ]]; then brew install python && PY="$(brew --prefix)/bin/python3"
+  else die "Python 3.10 or newer is required"; fi
 fi
-[[ -x control-server/.venv/bin/python ]] || "$PY" -m venv control-server/.venv
-control-server/.venv/bin/pip install -q --upgrade pip
-control-server/.venv/bin/pip install -q -r control-server/requirements.txt
-ok "control-server/.venv ($(control-server/.venv/bin/python --version))"
+[[ -x .venv/bin/python ]] || "$PY" -m venv .venv
+.venv/bin/python -m pip install -q --upgrade pip
+.venv/bin/python -m pip install -q -e ".[tray]"
+ok ".venv ($(.venv/bin/python --version)), the homestream command is .venv/bin/homestream"
 
-# --- Config -----------------------------------------------------------------------
-step "Configuration"
-if [[ -f .env ]]; then
-  ok ".env exists (kept as is)"
-else
-  cp config/env.example .env
-  sed -i '' "s/^HOMESTREAM_TOKEN=.*/HOMESTREAM_TOKEN=$(openssl rand -hex 24)/" .env
-  [[ $WITH_SNAPCAST == 1 ]] && sed -i '' 's/^HOMESTREAM_SNAPCAST=.*/HOMESTREAM_SNAPCAST=1/' .env
-  chmod 600 .env
-  ok "created .env with a fresh random token"
+if [[ "$(uname -s)" == Darwin ]]; then
+  if .venv/bin/python -m homestream.capture --list 2>/dev/null | grep -qx "BlackHole 2ch"; then
+    ok "BlackHole 2ch is visible"
+  else
+    echo "    ! BlackHole isn't visible yet. If you just installed it: sudo killall coreaudiod, or restart."
+  fi
 fi
+
+# --- Settings -----------------------------------------------------------------------
+step "Settings"
+SETTINGS="$(.venv/bin/python -m homestream config)"
+ok "$SETTINGS (includes a random token for devices that aren't on Tailscale)"
 
 # --- Tailscale ----------------------------------------------------------------------
-step "Tailscale (private network between the Mac and your phone)"
-find_tailscale() {
-  if command -v tailscale >/dev/null; then command -v tailscale
-  elif [[ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]]; then echo /Applications/Tailscale.app/Contents/MacOS/Tailscale
-  fi
-  return 0
-}
-TS="$(find_tailscale)"
-if [[ -z "$TS" ]] && ask "Tailscale isn't installed. Install it with Homebrew now?"; then
-  brew install --cask tailscale-app
-  TS="$(find_tailscale)"
-fi
-TS_IP=""
-if [[ -z "$TS" ]]; then
-  echo "    Not installed. Get it from https://tailscale.com/download (or: brew install --cask tailscale-app)"
-else
-  TS_IP="$("$TS" ip -4 2>/dev/null | head -1 || true)"
-  if [[ -n "$TS_IP" ]]; then
-    ok "connected, this Mac is $TS_IP"
+step "Tailscale (private network between this computer and your phone)"
+TS="$(command -v tailscale || true)"
+[[ -z "$TS" && -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]] && TS=/Applications/Tailscale.app/Contents/MacOS/Tailscale
+if [[ -z "$TS" ]] && ask "Tailscale isn't installed. Install it now?"; then
+  if [[ "$(uname -s)" == Darwin ]]; then
+    brew install --cask tailscale-app
+    TS=/Applications/Tailscale.app/Contents/MacOS/Tailscale
   else
-    open -a Tailscale 2>/dev/null || true
-    echo "    Sign in from the Tailscale menu bar icon, then re-run ./setup.sh to check."
+    curl -fsSL https://tailscale.com/install.sh | sh
+    TS="$(command -v tailscale || true)"
   fi
+fi
+if [[ -z "$TS" ]]; then
+  echo "    Not installed. Get it from https://tailscale.com/download"
+elif TS_IP="$("$TS" ip -4 2>/dev/null | head -1)" && [[ -n "$TS_IP" ]]; then
+  ok "connected, this computer is $TS_IP"
+elif [[ "$(uname -s)" == Darwin ]]; then
+  open -a Tailscale 2>/dev/null || true
+  echo "    Sign in from the Tailscale menu bar icon, then re-run ./setup.sh to check."
+else
+  echo "    Sign in with: sudo tailscale up"
 fi
 
 # --- Next steps -------------------------------------------------------------------------
 step "Next steps"
 cat <<EOF
   1. Install Tailscale on your phone and sign in with the same account.
-  2. Start the relay:   ./scripts/start-relay.sh
+  2. Start HomeStream:   ./scripts/start-relay.sh     (or, without a terminal: .venv/bin/homestream tray)
+EOF
+if [[ "$(uname -s)" == Darwin ]]; then
+  cat <<EOF
      The first time, macOS asks to let your terminal use the microphone.
-     Allow it: that's how the relay hears BlackHole.
-  3. On your phone, scan the QR code it prints (or type the address it shows),
-     then Share -> Add to Home Screen. Play something on the Mac and tap Listen.
+     Allow it: that's how HomeStream hears BlackHole.
+EOF
+fi
+cat <<EOF
+  3. On your phone, scan the QR code it shows (or type the address), then
+     Share -> Add to Home Screen. Play something here and tap Listen.
 EOF
