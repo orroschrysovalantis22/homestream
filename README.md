@@ -8,55 +8,71 @@
 
 Listen to whatever your computer is playing from your phone, anywhere, and control it: play, pause, skip.
 
-Play Spotify, YouTube, Apple Music or anything else on your Mac, Windows or Linux computer. On your phone, over Wi-Fi or cellular data, open one page. You hear the computer about half a second behind live, with the album art and buttons a real player has, including on the lock screen. Nothing is exposed to the public internet: the phone reaches the computer over [Tailscale](https://tailscale.com), a free private network.
+Play Spotify, YouTube or anything else on your Mac, Windows or Linux computer, and listen on your phone over Wi-Fi or mobile data, with the album art and play/pause/skip buttons, even on the lock screen.
 
 <p align="center"><img src="docs/screenshot.png" width="620" alt="The HomeStream phone page in dark and light mode: album artwork, track title and artist, a progress bar, previous / play-pause / next controls and a Listen on this phone button"></p>
 
-* **Any phone, no app.** A web page you add to your Home Screen, tested on iPhone (Safari) and Android (Chrome). It keeps playing with the screen locked, and the lock screen's buttons work.
-* **About half a second behind live,** so pressing ⏭ feels immediate.
-* **Works with whatever is playing.** Track info and controls come from the system's own media controls (the same ones as Control Center on Mac, the volume flyout on Windows, and MPRIS on Linux), so any app works: browsers, Spotify, Apple Music, VLC…
-* **Lives in your menu bar / system tray.** Start at login, and a "Connect a phone" page with a QR code. No terminal needed.
-* **No password on your own devices.** Tailscale already proves the phone is yours. Anything else, like a device on the computer's Wi-Fi, needs a token.
-* **Clean audio.** Captured and MP3-encoded inside the app (PortAudio/WASAPI/PulseAudio + LAME), verified gap-free by an automated test signal.
+* **Any phone, no app to install.** A web page you add to your Home Screen. Works on iPhone and Android, with the lock screen's buttons.
+* **About half a second behind live,** so pressing ⏭ feels instant.
+* **Works with whatever is playing:** browsers, Spotify, Apple Music, VLC… Album art, title and controls come from your computer's own media controls.
+* **No terminal needed.** HomeStream lives in your menu bar or system tray and can start when you log in.
+* **Private.** Nothing is opened up to the internet; only your own devices can connect.
 
 ## Get started
 
-You need a free [Tailscale](https://tailscale.com/download) account, with the app on the computer and on your phone, signed in to the same account.
+**1. Install Tailscale on your computer and your phone.** [Tailscale](https://tailscale.com/download) is a free app that connects your own devices privately, so your phone can reach your computer from anywhere. Sign in with the same account on both.
 
-### Download the app
+**2. Download HomeStream for your computer** from the [latest release](https://github.com/orroschrysovalantis22/homestream/releases/latest):
 
-From the [latest release](https://github.com/orroschrysovalantis22/homestream/releases/latest):
-
-| | Download | Also needed |
+| Computer | Download | Also install |
 |---|---|---|
-| **macOS** 13+ (Apple Silicon) | `HomeStream-macOS.zip`, then move HomeStream to Applications | [BlackHole 2ch](https://existential.audio/blackhole/) (macOS has no built-in way to record what's playing). For track info and controls with any player: `brew install media-control` |
-| **Windows** 10/11 | `HomeStream-Windows.zip`, then run `HomeStream.exe` | nothing |
-| **Linux** (PulseAudio or PipeWire) | `HomeStream-Linux.tar.gz`, then run `HomeStream` | `playerctl` for controls (e.g. `sudo apt install playerctl`) |
+| **macOS** 13+ (Apple Silicon) | `HomeStream-macOS.zip`: unzip, move HomeStream to Applications | [BlackHole 2ch](https://existential.audio/blackhole/), free. macOS can't record what's playing without it. Optional: `brew install media-control` for track info and controls with any app. |
+| **Windows** 10/11 | `HomeStream-Windows.zip`: unzip, run `HomeStream.exe` | nothing |
+| **Linux** (PulseAudio or PipeWire) | `HomeStream-Linux.tar.gz`: unpack, run `HomeStream` | `playerctl`, for controls (e.g. `sudo apt install playerctl`) |
 
-The apps aren't signed yet, so the first time:
-* **macOS:** right-click HomeStream → **Open** → **Open**.
-* **Windows:** if SmartScreen appears, **More info** → **Run anyway**. Then Windows asks whether HomeStream may use the network: **Allow**, that's how your phone reaches it.
+The first time you open it (the apps aren't signed yet):
+* **macOS:** right-click HomeStream → **Open** → **Open**. When macOS asks to use the **microphone**, allow it: that's how HomeStream hears BlackHole.
+* **Windows:** if a blue SmartScreen box appears, **More info** → **Run anyway**. When Windows asks whether HomeStream may use the network, click **Allow**.
 
-HomeStream appears in the menu bar (Mac) or system tray (Windows, Linux) and opens the **Connect a phone** page. Scan its QR code with your phone, tap **Share → Add to Home Screen**, and from then on it's an app on your phone. Play something on the computer and tap **Listen on this phone**.
+**3. Connect your phone.** HomeStream appears in your menu bar or system tray and opens a **Connect your phone** page. Scan its QR code with your phone's camera, then tap **Share → Add to Home Screen** (iPhone) or **⋮ → Add to Home screen** (Android). Play something on the computer and tap **Listen on this phone**.
 
-> **Windows status:** tested on Windows 11 (in a virtual machine): capture verified gap-free with the test signal, controls with Media Player, the tray app and `HomeStream.exe`. Not yet on a physical PC with Spotify; reports welcome.
+That's it. Next time, just open HomeStream on your phone.
 
-### Or run from source
+> **Windows status:** tested on Windows 11 in a virtual machine (clean audio, controls, tray app, `HomeStream.exe`), not yet on a physical PC with Spotify. Reports welcome.
+
+## Troubleshooting
+
+Run `homestream doctor` (or check the tray menu): it tests capture, controls and Tailscale and says what's wrong.
+
+| Problem | Fix |
+|---|---|
+| The page asks for a token | Your phone isn't connecting through Tailscale. Switch Tailscale on in its app and reload. |
+| The page doesn't load | Tailscale must be on for both devices, and the computer awake with HomeStream running. Type the number address shown on the Connect page (`100.x.y.z:8765`): browsers treat a bare name as a search. |
+| Windows: the phone can't connect | You clicked Cancel when Windows asked about the network. Windows Security → Firewall & network protection → Allow an app through firewall → tick HomeStream. |
+| No sound | macOS: allow the microphone permission, and check BlackHole is installed. Linux: `homestream doctor` should list a "Monitor of …". |
+| No track info, or buttons do nothing | macOS: `brew install media-control`. Linux: install `playerctl`. |
+| No sound on the Mac after a crash | Pick your speakers again in System Settings → Sound. |
+
+## Run from source
 
 ```bash
 git clone https://github.com/orroschrysovalantis22/homestream.git && cd homestream
-./setup.sh                                       # macOS and Linux
+./setup.sh                                           # macOS and Linux
 powershell -ExecutionPolicy Bypass -File setup.ps1   # Windows
 ```
 
-Setup installs what's needed (on Mac: BlackHole and media-control via Homebrew; on Linux: playerctl and the PulseAudio client library; on Windows: Python if missing), creates `.venv`, writes your settings with a random token, and offers to install Tailscale. Then:
+The setup script installs what's needed (Mac: BlackHole and media-control via Homebrew; Linux: playerctl; Windows: Python if missing), creates a Python environment in `.venv`, writes your settings with a random token, and offers to install Tailscale. Then start HomeStream:
 
 ```bash
-.venv/bin/homestream tray          # menu bar / system tray (Windows: .venv\Scripts\homestream tray)
+.venv/bin/homestream tray          # in the menu bar / system tray (Windows: .venv\Scripts\homestream tray)
 ./scripts/start-relay.sh           # or in a terminal, with a QR code (Windows: scripts\start-relay.cmd)
 ```
 
-## How each computer captures and controls
+## Technical details
+
+For the curious and for contributors.
+
+### How each computer captures and controls
 
 | | Captures | Controls and track info |
 |---|---|---|
@@ -64,9 +80,9 @@ Setup installs what's needed (on Mac: BlackHole and media-control via Homebrew; 
 | **Windows** | What the speakers play (WASAPI loopback). No driver. | Global System Media Transport Controls: anything in the volume flyout. |
 | **Linux** | The monitor of the default PulseAudio/PipeWire output. No driver. | MPRIS via `playerctl`: Spotify, Firefox, Chrome, VLC, mpv… |
 
-**macOS permissions.** The first time, macOS asks to let HomeStream (or your terminal) use the **microphone**. Allow it: that's how it hears BlackHole. To hear the music on the Mac as well, create a **Multi-Output Device** in Audio MIDI Setup (speakers + BlackHole), select it, and set `HOMESTREAM_AUTO_ROUTE=0`.
+**Hearing the music on the Mac too.** HomeStream sends the Mac's sound to BlackHole while it runs. To also hear it on the Mac, create a **Multi-Output Device** in Audio MIDI Setup (speakers + BlackHole), select it, and set `HOMESTREAM_AUTO_ROUTE=0`.
 
-## Settings
+### Settings
 
 Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source checkout, otherwise per user, e.g. `~/Library/Application Support/HomeStream/homestream.env`, `%APPDATA%\HomeStream\homestream.env` or `~/.config/homestream/homestream.env`. `homestream config` prints the path. The useful ones:
 
@@ -81,7 +97,7 @@ Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source che
 | `HOMESTREAM_AUTO_ROUTE` | `1` | macOS: switch the output to BlackHole while running |
 | `HOMESTREAM_SNAPCAST` | `0` | also run a [Snapcast](https://github.com/badaix/snapcast) server (macOS/Linux) |
 
-## How it works
+### How it works
 
 ```
  Computer                                                          Phone (anywhere)
@@ -98,14 +114,14 @@ Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source che
 * **Playback on the phone** uses Media Source Extensions (`ManagedMediaSource` on iPhone). The page fetches the stream itself and keeps about 0.5 s buffered. Left alone, iPhone Safari waits for about 5 s and stays that far behind. A dropped connection only restarts the fetch, so playback survives the phone being locked.
 * **Now playing** is pushed to the page over server-sent events the moment the track changes.
 
-## Security
+### Security
 
 * **Tailscale devices** get in without a password: only when both ends of the connection are Tailscale addresses, so a device on the local network can't pass itself off as one.
 * **Everything else** needs the token: an `Authorization: Bearer <token>` header, or the cookie set when it's entered on the page. Links of the form `/#token=…` keep it in the URL fragment, which never reaches servers or logs.
 * The **Connect a phone** page (`/pair`) is only served to the computer's own browser.
 * Don't port-forward 8765 to the internet; traffic is plain HTTP. For access beyond your tailnet, put HTTPS in front (`tailscale serve` / `funnel`).
 
-## API
+### API
 
 | Route | |
 |---|---|
@@ -123,21 +139,7 @@ curl -X POST http://100.x.y.z:8765/next                                     # fr
 curl -H "Authorization: Bearer $TOKEN" http://192.168.1.20:8765/status      # anywhere else
 ```
 
-## Troubleshooting
-
-`homestream doctor` checks capture, controls and Tailscale and says what's wrong.
-
-| Symptom | Fix |
-|---|---|
-| The page asks for a token | That device isn't coming through Tailscale. Switch Tailscale on in its app and reload. |
-| A name like `my-pc:8765` doesn't load | Browsers treat a bare name as a search. Use the numeric address (`100.x.y.z:8765`) or type `http://` first. |
-| Windows: the phone can't connect | You clicked Cancel when Windows asked about the network. Windows Security → Firewall & network protection → Allow an app through firewall → tick HomeStream (or Python). |
-| *Mac unreachable* | Tailscale must be connected on both devices, and the computer awake with HomeStream running. |
-| No sound | macOS: the output must be BlackHole (HomeStream switches it unless `HOMESTREAM_AUTO_ROUTE=0`); allow the microphone permission. Linux: `homestream doctor` should list a "Monitor of …". |
-| No track info / buttons do nothing | macOS: `brew install media-control`. Linux: install `playerctl`. |
-| No sound on the Mac after a crash | Pick your speakers again in System Settings → Sound. |
-
-## Development
+### Development
 
 ```bash
 pip install -e ".[dev,tray]"
@@ -154,7 +156,7 @@ Add `?debug` to the page's address to see the measured delay. CI runs the tests 
 * Record what the simulated phone plays with `python -m homestream.capture --seconds 15 "BlackHole 2ch"` and check it with `tools/analyze_test_signal.py`. Clean means beeps 1000 ms apart and no gaps or noise.
 * `tools/android.sh` drives the emulator, including the phone's media buttons and what its lock screen shows.
 
-### Layout
+#### Layout
 
 ```
 homestream/cli.py           the `homestream` command: start, serve, doctor, tray, config

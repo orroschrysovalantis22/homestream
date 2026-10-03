@@ -80,6 +80,10 @@ setup_linux() {
   echo "    No virtual audio device needed: HomeStream records what your speakers play."
 }
 
+bold "HomeStream setup"
+echo "Installs what HomeStream needs, puts its Python environment in .venv and creates your settings."
+echo "Each step is shown as it runs; it asks before installing BlackHole or Tailscale."
+
 case "$(uname -s)" in
   Darwin) setup_macos ;;
   Linux) setup_linux ;;

@@ -36,6 +36,10 @@ function Find-Python {
 }
 function Invoke-Python($python, [string[]]$arguments) { & $python.Exe @($python.Args + $arguments) }
 
+Write-Host "HomeStream setup" -ForegroundColor White
+Write-Host "Installs what HomeStream needs, puts its Python environment in .venv and creates your settings."
+Write-Host "Each step is shown as it runs; it asks before installing Python or Tailscale."
+
 Step "Python"
 $python = Find-Python
 if (-not $python) {
@@ -82,5 +86,6 @@ Step "Next steps"
 Write-Host "  1. Install Tailscale on your phone and sign in with the same account."
 Write-Host "  2. Start HomeStream: double-click scripts\start-relay.cmd"
 Write-Host "     (or, without a console window: .venv\Scripts\homestream.exe tray)"
+Write-Host "     The first time, Windows asks whether it may use the network: click Allow."
 Write-Host "  3. On your phone, scan the QR code it shows (or type the address), then"
 Write-Host "     Share -> Add to Home Screen. Play something here and tap Listen."
