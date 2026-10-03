@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tray = ["pystray>=0.19", "Pillow>=10"]
-dev = ["pytest>=8", "numpy>=1.26"]
+dev = ["pytest>=8", "numpy>=1.26", "ruff>=0.6"]
 
 [project.scripts]
 homestream = "homestream.cli:main"
@@ -48,3 +48,6 @@ homestream = ["web/*.html", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120

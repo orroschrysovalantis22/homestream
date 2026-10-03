@@ -19,7 +19,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from . import __version__
-from .config import SOURCE_ROOT, default_audio_device, ensure_env_file, env_file, load_env_file
+from .config import SOURCE_ROOT, default_audio_device, ensure_env_file, load_env_file
 
 
 def settings() -> tuple[str, str, int]:
@@ -159,6 +159,11 @@ def cmd_tray(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # e.g. a Windows console that can't show ✓
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(prog="homestream", description="Listen to this computer's audio on your phone.")
     parser.add_argument("--version", action="version", version=f"homestream {__version__}")
     sub = parser.add_subparsers(dest="command")

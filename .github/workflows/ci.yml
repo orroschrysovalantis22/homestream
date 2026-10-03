@@ -26,4 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint shell scripts
-        run: shellcheck setup.sh scripts/*.sh tools/*.sh
+        run: shellcheck setup.sh scripts/*.sh tools/*.sh tools/linux/*.sh
+      - name: Lint Python (errors only)
+        run: pipx run ruff check --select E9,F homestream tests tools
+
+  linux-end-to-end:
+    # A real player (mpv) plays to PulseAudio; HomeStream streams and controls it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tools/linux/test.sh
+        run: tools/linux/test.sh

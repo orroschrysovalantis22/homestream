@@ -106,7 +106,10 @@ def print_qr(text: str) -> None:
     qr = qrcode.QRCode(border=2)
     qr.add_data(text)
     try:
-        qr.print_tty() if sys.stdout.isatty() else qr.print_ascii(invert=True)
+        if sys.stdout.isatty() and sys.platform != "win32":
+            qr.print_tty()  # coloured blocks: scans best, but needs ANSI colours
+        else:
+            qr.print_ascii(invert=True)
     except (OSError, UnicodeEncodeError):
         pass
 
