@@ -331,6 +331,19 @@ def test_cli_version_and_config(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "x.env").exists()
 
 
+def test_cli_runs_without_a_console(tmp_path, monkeypatch):
+    # pythonw (start at login) and the packaged Windows app have no stdout/stderr, and
+    # uvicorn's logging calls sys.stdout.isatty(): that crashed the tray app on Windows.
+    from homestream.cli import main
+    from homestream.server import make_server
+
+    monkeypatch.setenv("HOMESTREAM_ENV_FILE", str(tmp_path / "x.env"))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    assert main(["config"]) == 0
+    make_server(log_level="warning")
+
+
 # --- startup checks --------------------------------------------------------------------
 
 def test_preflight_passes_with_test_tone(capsys):

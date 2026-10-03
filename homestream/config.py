@@ -40,7 +40,7 @@ def load_env_file(path: Path | None = None) -> Path:
     """Load KEY=value lines into os.environ (without overriding); return the path used."""
     path = path or env_file()
     if path.exists():
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -56,12 +56,12 @@ def ensure_env_file(path: Path | None = None) -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     template = (SOURCE_ROOT / "config" / "env.example")
-    text = template.read_text() if template.exists() else "HOMESTREAM_TOKEN=\n"
+    text = template.read_text(encoding="utf-8") if template.exists() else "HOMESTREAM_TOKEN=\n"
     lines = [
         f"HOMESTREAM_TOKEN={secrets.token_hex(24)}" if line.startswith("HOMESTREAM_TOKEN=") else line
         for line in text.splitlines()
     ]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
         path.chmod(0o600)
     except OSError:

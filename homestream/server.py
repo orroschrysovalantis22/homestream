@@ -155,7 +155,7 @@ async def pair(request: Request):
                    else "Tailscale isn't connected, so this only works while your phone is on the same Wi-Fi."),
         "status_class": "" if tailscale else "warn",
     }
-    page = (WEB_DIR / "pair.html").read_text()
+    page = (WEB_DIR / "pair.html").read_text(encoding="utf-8")  # not the Windows default (cp1252)
     for key, value in values.items():
         page = page.replace("{{" + key + "}}", value)
     return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})

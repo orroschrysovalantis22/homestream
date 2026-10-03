@@ -159,6 +159,9 @@ def cmd_tray(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:  # no console (pythonw, the Windows app): uvicorn needs something here
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="replace")  # e.g. a Windows console that can't show ✓

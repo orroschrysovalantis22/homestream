@@ -199,6 +199,7 @@ def test_pair_page_is_only_for_this_computer(server):
     r = server.request("GET", "/pair")
     assert r.status == 200 and b"<svg" in r.body and b"Connect your phone" in r.body
     assert b"{{" not in r.body  # every placeholder filled in
+    assert "Share →".encode() in r.body  # read as UTF-8, not Windows' default code page
 
 
 @pytest.mark.parametrize("client,server_addr,headers,allowed", [
