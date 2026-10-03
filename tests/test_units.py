@@ -213,6 +213,7 @@ def mpris_line(**fields):
     return "\t".join(fields.get(f, "") for f in FIELDS)
 
 
+@posix_only
 def test_mpris_reads_playerctl_output(tmp_path):
     from homestream.players.linux import MprisController
 
@@ -408,5 +409,7 @@ def test_mac_output_devices_are_readable():
     from homestream import macaudio
 
     outputs = macaudio.output_devices()
-    assert outputs and macaudio.default_output() in outputs
+    if not outputs:
+        pytest.skip("no audio outputs (e.g. a CI machine)")
+    assert macaudio.default_output() in outputs
     assert macaudio.set_default_output("No Such Output 123") is False
