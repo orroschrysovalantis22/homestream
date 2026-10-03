@@ -10,13 +10,15 @@ Listen to whatever your computer is playing from your phone, anywhere, and contr
 
 Play Spotify, YouTube or anything else on your Mac, Windows or Linux computer, and listen on your phone over Wi-Fi or mobile data, with the album art and play/pause/skip buttons, even on the lock screen.
 
-<p align="center"><img src="docs/screenshot.png" width="620" alt="The HomeStream phone page in dark and light mode: album artwork, track title and artist, a progress bar, previous / play-pause / next controls and a Listen on this phone button"></p>
+<p align="center"><img src="docs/demo.gif" width="800" alt="Animation: music plays in a browser on a laptop; a phone taps Listen and plays it live over a private Tailscale connection; an ad on the laptop is blocked by the browser so the phone never hears it; skipping on the phone changes the track on the laptop; ends with the HomeStream logo and the GitHub address"></p>
 
 * **Any phone, no app to install.** A web page you add to your Home Screen. Works on iPhone and Android, with the lock screen's buttons.
 * **About half a second behind live,** so pressing ⏭ feels instant.
 * **Works with whatever is playing:** any app, or any website in any browser (Chrome, Firefox, Brave, Safari…) with whatever extensions you use. HomeStream relays exactly what your computer plays, so if your browser blocks ads (as Brave does), you won't hear them on your phone either. Album art, title and controls come from your computer's own media controls.
 * **No terminal needed.** HomeStream lives in your menu bar or system tray and can start when you log in.
 * **Private.** Nothing is opened up to the internet; only your own devices can connect.
+
+<p align="center"><img src="docs/screenshot.png" width="560" alt="The HomeStream phone page in dark and light mode: album artwork, track title and artist, a progress bar, previous / play-pause / next controls and a Listen on this phone button"></p>
 
 ## Get started
 
