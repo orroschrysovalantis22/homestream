@@ -14,7 +14,7 @@ Play Spotify, YouTube or anything else on your Mac, Windows or Linux computer, a
 
 * **Any phone, no app to install.** A web page you add to your Home Screen. Works on iPhone and Android, with the lock screen's buttons.
 * **About half a second behind live,** so pressing ⏭ feels instant.
-* **Works with whatever is playing:** browsers, Spotify, Apple Music, VLC… Album art, title and controls come from your computer's own media controls.
+* **Works with whatever is playing:** any app, or any website in any browser (Chrome, Firefox, Brave, Safari…) with whatever extensions you use. HomeStream relays exactly what your computer plays, so if your browser blocks ads (as Brave does), you won't hear them on your phone either. Album art, title and controls come from your computer's own media controls.
 * **No terminal needed.** HomeStream lives in your menu bar or system tray and can start when you log in.
 * **Private.** Nothing is opened up to the internet; only your own devices can connect.
 
