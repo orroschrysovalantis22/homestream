@@ -86,7 +86,7 @@ def start_snapcast(device: str) -> subprocess.Popen | None:
 
 def cmd_start(args) -> int:
     from . import preflight
-    from .system import keep_awake, route_mac_output
+    from .system import keep_awake
 
     path = ensure_env_file()
     load_env_file(path)
@@ -95,7 +95,6 @@ def cmd_start(args) -> int:
 
     check_settings()
     with ExitStack() as stack:
-        stack.enter_context(route_mac_output(device))
         if not args.skip_checks and os.environ.get("HOMESTREAM_SKIP_PREFLIGHT", "0") != "1":
             if not preflight.run(device, player):
                 print("\nFix the audio capture problem above and try again.")

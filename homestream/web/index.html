@@ -148,8 +148,8 @@
 <main id="login">
   <header><h1>HomeStream</h1></header>
   <form id="login-form">
-    <p><strong>This device isn't connected through Tailscale.</strong> Switch Tailscale on in its app and reload this page.</p>
-    <p>Or, to connect without Tailscale, enter the token from the <code>.env</code> file on your Mac.</p>
+    <p><strong>This phone isn't connected through Tailscale.</strong> Switch Tailscale on in its app, then tap Reload.</p>
+    <p>Not using Tailscale? On the computer, choose <strong>Connect a phone…</strong> from HomeStream's menu bar or tray icon and scan the QR code. Or type the token from HomeStream's settings file here.</p>
     <input id="token" type="password" autocomplete="current-password" placeholder="Token" required>
     <button type="submit">Connect</button>
     <button type="button" id="retry" class="secondary">Reload</button>
@@ -168,7 +168,7 @@
 
   <section id="meta" class="meta" aria-live="polite">
     <div id="title" class="title">Nothing playing</div>
-    <div id="artist" class="artist">Play something on your Mac</div>
+    <div id="artist" class="artist">Play something on your computer</div>
     <div id="source" class="source"></div>
   </section>
 
@@ -177,7 +177,7 @@
     <div class="times"><span id="elapsed">0:00</span><span id="remaining">-0:00</span></div>
   </section>
 
-  <section class="transport" aria-label="Mac playback">
+  <section class="transport" aria-label="Playback on your computer">
     <button class="ctl" data-cmd="prev" aria-label="Previous">
       <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 18V6z"/></svg>
     </button>
@@ -222,6 +222,9 @@ let events = null;
 let accessMode = null;        // "tailscale" (no password needed) or "token"
 let expected = null;          // {state, until}: what the user just asked for
 let clockOffset = 0;          // server clock minus ours
+let computer = "computer";    // what to call it: "Mac", "PC" or "computer", from the server
+let localPage = false;        // open on the computer itself, where listening would only echo
+const Computer = () => computer[0].toUpperCase() + computer.slice(1);
 window.homestream = { delay: null, buffer: null };  // read by the test harness
 
 function toast(msg) {
@@ -308,8 +311,13 @@ function render(data) {
     accessMode = data.access;
     $("logout").style.display = accessMode === "tailscale" ? "none" : "";
   }
+  if (data.computer) computer = data.computer;
+  if ("local" in data && data.local !== localPage) {
+    localPage = data.local;
+    if (!wantListen) setListenUI("off");
+  }
   applyExpectation(p);
-  setConn(true, "Mac online");
+  setConn(true, `${Computer()} online`);
 
   const playing = p.state === "playing";
   document.body.classList.toggle("paused", p.state === "paused");
@@ -317,7 +325,7 @@ function render(data) {
 
   const idle = !p.title;
   $("title").textContent = p.title || (p.backend === "browser" ? "Browser audio" : "Nothing playing");
-  $("artist").textContent = p.artist || (idle ? "Play something on your Mac" : "");
+  $("artist").textContent = p.artist || (idle ? `Play something on your ${computer}` : "");
   $("source").textContent = p.app ? `Playing in ${p.app}` : "";
 
   const trackKey = `${p.title}|${p.artist}`;
@@ -336,7 +344,7 @@ function render(data) {
   $("backdrop").classList.toggle("on", !!p.artwork);
   renderProgress();
 
-  const warnings = [p.warning, s.error && `Mac audio: ${s.error}`].filter(Boolean);
+  const warnings = [p.warning, s.error && `${Computer()} audio: ${s.error}`].filter(Boolean);
   $("stream-info").className = warnings.length ? "warn" : "";
   $("stream-info").textContent = warnings.join(" · ");
 
@@ -344,7 +352,7 @@ function render(data) {
     if (trackKey !== lastTrackKey) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: p.title || "HomeStream",
-        artist: p.artist || "Live from your Mac",
+        artist: p.artist || `Live from your ${computer}`,
         album: p.album || "",
         artwork: p.artwork ? [{ src: new URL(p.artwork, location.href).href, sizes: "512x512" }] : [],
       });
@@ -364,7 +372,7 @@ async function refresh() {
   try {
     render(await api("/status"));
   } catch (e) {
-    if (e.message !== "unauthorized") setConn(false, "Mac unreachable");
+    if (e.message !== "unauthorized") setConn(false, `${Computer()} unreachable`);
   }
 }
 
@@ -381,7 +389,7 @@ setInterval(() => {
 }, 10000);
 setInterval(renderProgress, 500);
 
-// ---- Mac playback ---------------------------------------------------------
+// ---- playback on the computer ----------------------------------------------
 
 async function send(cmd) {
   navigator.vibrate?.(10);
@@ -652,7 +660,8 @@ function setListenUI(state) {
   btn.classList.toggle("connecting", state === "connecting");
   btn.setAttribute("aria-pressed", String(state !== "off"));
   $("listen-label").textContent = {
-    off: "Listen on this phone", connecting: "Connecting…", live: "Live · tap to stop",
+    off: localPage ? "Open this on your phone to listen" : "Listen on this phone",
+    connecting: "Connecting…", live: "Live · tap to stop",
   }[state];
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = state === "off" ? "paused" : "playing";
 }
@@ -665,6 +674,8 @@ function handlePlayFailure(e) {
 }
 
 function startListening() {
+  // On the computer itself the stream would play back into what's being recorded: an echo.
+  if (localPage) return toast("Listening here would echo. Open HomeStream on your phone; the buttons above work here.");
   wantListen = true;
   setListenUI("connecting");
   // After a pause from the lock screen the player still exists: carry on with it.
@@ -733,7 +744,7 @@ $("logout").addEventListener("click", async () => {
   lock();
 });
 
-// Lock-screen and headphone controls drive the Mac too.
+// Lock-screen and headphone controls drive the computer too.
 if ("mediaSession" in navigator) {
   const ms = navigator.mediaSession;
   ms.setActionHandler("play", () => { send("play"); startListening(); });
@@ -775,7 +786,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Pairing links look like http://<mac>:8765/#token=... — the fragment never reaches the server or its logs.
+// Pairing links look like http://<computer>:8765/#token=... — the fragment never reaches the server or its logs.
 async function consumePairingLink() {
   const m = location.hash.match(/token=([^&]+)/);
   if (!m) return;

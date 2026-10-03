@@ -49,9 +49,10 @@ class Server:
     port: int
     proc: subprocess.Popen
 
-    def request(self, method: str, path: str, token: str | None = None, cookie: str | None = None, body=None) -> Response:
+    def request(self, method: str, path: str, token: str | None = None, cookie: str | None = None, body=None,
+                headers: dict | None = None) -> Response:
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        headers = {}
+        headers = dict(headers or {})
         if token:
             headers["Authorization"] = f"Bearer {token}"
         if cookie:

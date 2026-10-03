@@ -74,7 +74,7 @@ def run() -> int:
     from . import autostart, preflight
     from . import server as srv
     from .cli import settings
-    from .system import keep_awake, phone_address, route_mac_output
+    from .system import keep_awake, phone_address
 
     device, player, port = settings()
     srv.check_settings()
@@ -83,7 +83,6 @@ def run() -> int:
     running.set()
 
     stack = ExitStack()
-    stack.enter_context(route_mac_output(device))
     stack.enter_context(keep_awake())
     server = srv.make_server(log_level="warning")
     # After make_server: uvicorn's logging setup closes any handlers that already exist.

@@ -173,6 +173,20 @@ def test_status_says_how_we_got_in(server):
     assert server.request("GET", "/status", token=TOKEN).json()["access"] == "token"
 
 
+def test_status_names_the_computer_and_says_when_the_page_is_on_it(server):
+    body = server.request("GET", "/status", token=TOKEN).json()
+    assert body["computer"] in ("Mac", "PC", "computer")
+    assert body["local"] is True  # the tests talk to it from this computer, so Listen would echo
+
+
+def test_other_websites_cant_press_the_buttons(server):
+    # Browsers label requests from other sites; only the page's own (and tools like curl) pass.
+    cross = server.request("POST", "/next", token=TOKEN, headers={"Sec-Fetch-Site": "cross-site"})
+    assert cross.status == 403
+    assert server.request("POST", "/next", token=TOKEN, headers={"Sec-Fetch-Site": "same-origin"}).status == 200
+    assert server.request("POST", "/next", token=TOKEN).status == 200
+
+
 def test_runs_without_a_token_but_then_only_tailscale_gets_in():
     srv = start_server(HOMESTREAM_TOKEN="")
     try:

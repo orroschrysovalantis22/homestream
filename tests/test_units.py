@@ -86,6 +86,53 @@ def test_capture_runs_only_while_someone_listens(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_capture_hook_runs_only_while_someone_listens(monkeypatch):
+    # macOS uses it to send the sound to BlackHole only while a phone is listening.
+    monkeypatch.setattr(audio_stream, "IDLE_STOP_SECONDS", 0.3)
+    calls = []
+
+    async def scenario():
+        b = AudioBroadcaster("test-tone", on_capture=calls.append)
+        listener = b.listen()
+        assert await asyncio.wait_for(listener.__anext__(), 5)
+        assert calls == [True]
+        await listener.aclose()
+        for _ in range(30):
+            await asyncio.sleep(0.1)
+            if calls == [True, False]:
+                break
+        assert calls == [True, False]
+        await b.close()
+
+    asyncio.run(scenario())
+
+
+def test_mac_output_router_switches_while_listening_and_respects_a_manual_change():
+    from homestream.system import MacOutputRouter, output_router
+
+    class FakeCoreAudio:
+        current = "MacBook Speakers"
+
+        def default_output(self):
+            return self.current
+
+        def set_default_output(self, name):
+            self.current = name
+            return True
+
+    coreaudio = FakeCoreAudio()
+    router = MacOutputRouter("BlackHole 2ch", coreaudio=coreaudio)
+    router(True)
+    assert coreaudio.current == "BlackHole 2ch"
+    router(False)
+    assert coreaudio.current == "MacBook Speakers"
+    router(True)
+    coreaudio.current = "AirPods"  # picked by hand while the phone was listening: leave it
+    router(False)
+    assert coreaudio.current == "AirPods"
+    assert output_router("test-tone") is None
+
+
 def test_end_streams_finishes_every_listener():
     async def scenario():
         b = AudioBroadcaster("test-tone")

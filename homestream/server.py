@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -28,6 +29,7 @@ from pydantic import BaseModel
 from .audio import AudioBroadcaster
 from .config import PACKAGE_DIR, default_audio_device, load_env_file
 from .players import COMMANDS, ControlError, make_controller
+from .system import output_router
 
 WEB_DIR = PACKAGE_DIR / "web"
 COOKIE = "homestream_token"
@@ -41,11 +43,15 @@ TRUST_TAILSCALE = os.environ.get("HOMESTREAM_TRUST_TAILSCALE", "1") != "0"
 TAILSCALE_NETWORKS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
 HOST = os.environ.get("HOMESTREAM_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOMESTREAM_PORT", "8765"))
+# What the phone page calls this computer: "Mac online", "Play something on your PC".
+COMPUTER = {"darwin": "Mac", "win32": "PC"}.get(sys.platform, "computer")
 
+DEVICE = os.environ.get("HOMESTREAM_AUDIO_DEVICE") or default_audio_device()
 audio = AudioBroadcaster(
-    device=os.environ.get("HOMESTREAM_AUDIO_DEVICE") or default_audio_device(),
+    device=DEVICE,
     bitrate=os.environ.get("HOMESTREAM_BITRATE", "192k"),
     prebuffer=float(os.environ.get("HOMESTREAM_PREBUFFER", "1.0")),
+    on_capture=output_router(DEVICE),  # macOS: BlackHole only while a phone listens
 )
 player = make_controller(os.environ.get("HOMESTREAM_PLAYER", "auto"))
 # Set when the server is asked to quit, so long-lived responses can finish.
@@ -106,6 +112,16 @@ def require_access(request: Request) -> None:
         raise HTTPException(401, "not on your Tailscale network, and no valid token")
 
 
+def same_site_only(request: Request) -> None:
+    """Refuse button presses sent by other websites open in the phone's browser.
+
+    Browsers label every request with where it came from (Sec-Fetch-Site); only this
+    page's own requests say "same-origin". Tools like curl send no label and pass.
+    """
+    if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(403, "requests from other websites aren't allowed")
+
+
 authed = [Depends(require_access)]
 
 
@@ -161,7 +177,7 @@ async def pair(request: Request):
     return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
-@app.post("/auth", status_code=204)
+@app.post("/auth", status_code=204, dependencies=[Depends(same_site_only)])
 async def auth(body: AuthBody, request: Request, response: Response):
     if not token_ok(body.token):
         raise HTTPException(401, "wrong token")
@@ -171,19 +187,24 @@ async def auth(body: AuthBody, request: Request, response: Response):
     )
 
 
-@app.post("/logout", status_code=204)
+@app.post("/logout", status_code=204, dependencies=[Depends(same_site_only)])
 async def logout(response: Response):
     response.delete_cookie(COOKIE)
 
 
 async def current_status() -> dict:
-    return {"player": (await player.status()).to_dict(), "stream": audio.status()}
+    return {"player": (await player.status()).to_dict(), "stream": audio.status(), "computer": COMPUTER}
 
 
 @app.get("/status", dependencies=authed)
 async def status(request: Request):
-    # "access" lets the page hide the token controls when Tailscale let us in.
-    return {**await current_status(), "access": "tailscale" if via_tailscale(request) else "token"}
+    # "access" lets the page hide the token controls when Tailscale let us in; "local" means
+    # the page is open on this computer itself, where listening would only echo.
+    return {
+        **await current_status(),
+        "access": "tailscale" if via_tailscale(request) else "token",
+        "local": from_this_computer(request),
+    }
 
 
 async def wait_for_change(timeout: float) -> None:
@@ -240,7 +261,8 @@ def command_route(cmd: str):
 
 
 for _cmd in COMMANDS:
-    app.add_api_route(f"/{_cmd}", command_route(_cmd), methods=["POST"], dependencies=authed, name=_cmd)
+    app.add_api_route(f"/{_cmd}", command_route(_cmd), methods=["POST"], name=_cmd,
+                      dependencies=[*authed, Depends(same_site_only)])
 
 
 @app.get("/stream.mp3", dependencies=authed)

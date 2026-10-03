@@ -19,6 +19,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .capture import CHANNELS, TEST_DEVICES, CaptureError, open_source
 
@@ -96,8 +97,12 @@ class Listener:
 
 
 class AudioBroadcaster:
-    def __init__(self, device: str, bitrate: str = "192k", prebuffer: float = 0.0) -> None:
+    def __init__(self, device: str, bitrate: str = "192k", prebuffer: float = 0.0,
+                 on_capture: Callable[[bool], None] | None = None) -> None:
         self.device = device
+        # Told True when capture starts for a listener and False once nobody is listening
+        # (on macOS: send the sound to BlackHole only while a phone listens).
+        self.on_capture = on_capture
         self.bitrate = bitrate
         # Seconds of recent audio sent to a new listener straight away.
         self.prebuffer = prebuffer
@@ -178,7 +183,21 @@ class AudioBroadcaster:
                 listener.dropped_seconds += duration
             listener.queue.put_nowait(item)
 
+    def _capturing(self, on: bool) -> None:
+        if self.on_capture:
+            try:
+                self.on_capture(on)
+            except Exception as e:  # never let it stop the audio
+                log.warning("capture %s hook failed: %s", "start" if on else "stop", e)
+
     async def _pump(self) -> None:
+        self._capturing(True)
+        try:
+            await self._capture_while_listened()
+        finally:
+            self._capturing(False)
+
+    async def _capture_while_listened(self) -> None:
         backoff = 1.0
         loop = asyncio.get_running_loop()
         while self._listeners:

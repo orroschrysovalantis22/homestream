@@ -4,12 +4,15 @@ and finding the addresses a phone can use."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import socket
 import subprocess
 import sys
 from contextlib import contextmanager
+
+log = logging.getLogger("homestream")
 
 
 @contextmanager
@@ -40,30 +43,47 @@ def keep_awake():
             ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
 
 
-@contextmanager
-def route_mac_output(device: str):
-    """macOS: point the system output at BlackHole while relaying, and put it back afterwards.
+class MacOutputRouter:
+    """macOS: send the system output to BlackHole while a phone is listening, and put it back
+    afterwards, so the Mac's own speakers work whenever nobody is tuned in.
 
-    Windows and Linux record what the speakers play, so they need no rerouting.
+    Called with True when capture starts and False once nobody is listening. If you
+    pick another output yourself in the meantime, that choice is left alone.
     """
-    previous = None
-    if sys.platform == "darwin" and os.environ.get("HOMESTREAM_AUTO_ROUTE", "1") == "1" and device not in (
-        "test-tone", "test-signal"
-    ):
-        from . import macaudio
 
-        current = macaudio.default_output()
-        if current and current != device and macaudio.set_default_output(device):
-            previous = current
-            print(f"Sound output: {current} -> {device} (switched back when HomeStream stops)")
-    try:
-        yield
-    finally:
-        if previous:
+    def __init__(self, device: str, coreaudio=None) -> None:
+        self.device = device
+        self.previous: str | None = None
+        self._coreaudio = coreaudio
+
+    @property
+    def coreaudio(self):
+        if self._coreaudio is None:
             from . import macaudio
 
-            macaudio.set_default_output(previous)
-            print(f"Sound output restored to: {previous}")
+            self._coreaudio = macaudio
+        return self._coreaudio
+
+    def __call__(self, capturing: bool) -> None:
+        if capturing:
+            current = self.coreaudio.default_output()
+            if current and current != self.device and self.coreaudio.set_default_output(self.device):
+                self.previous = current
+                log.info("a phone is listening: sound output %s -> %s", current, self.device)
+        elif self.previous:
+            if self.coreaudio.default_output() == self.device:
+                self.coreaudio.set_default_output(self.previous)
+                log.info("nobody listening: sound output back to %s", self.previous)
+            self.previous = None
+
+
+def output_router(device: str) -> MacOutputRouter | None:
+    """The router for this computer, if it needs one: only macOS records through BlackHole."""
+    if sys.platform != "darwin" or os.environ.get("HOMESTREAM_AUTO_ROUTE", "1") != "1":
+        return None
+    if device in ("test-tone", "test-signal"):
+        return None
+    return MacOutputRouter(device)
 
 
 def tailscale_cli() -> str | None:

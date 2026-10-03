@@ -76,11 +76,11 @@ For the curious and for contributors.
 
 | | Captures | Controls and track info |
 |---|---|---|
-| **macOS** | The BlackHole virtual device. HomeStream switches the sound output to it while running and back afterwards. | macOS Now Playing via `media-control`: any app. Without it: the Spotify app (AppleScript), or media keys (needs Accessibility). |
+| **macOS** | The BlackHole virtual device. HomeStream switches the sound output to it only while a phone is listening, and back to your speakers when it stops. | macOS Now Playing via `media-control`: any app. Without it: the Spotify app (AppleScript), or media keys (needs Accessibility). |
 | **Windows** | What the speakers play (WASAPI loopback). No driver. | Global System Media Transport Controls: anything in the volume flyout. |
 | **Linux** | The monitor of the default PulseAudio/PipeWire output. No driver. | MPRIS via `playerctl`: Spotify, Firefox, Chrome, VLC, mpv… |
 
-**Hearing the music on the Mac too.** HomeStream sends the Mac's sound to BlackHole while it runs. To also hear it on the Mac, create a **Multi-Output Device** in Audio MIDI Setup (speakers + BlackHole), select it, and set `HOMESTREAM_AUTO_ROUTE=0`.
+**Hearing the music on the Mac too.** While a phone listens, the Mac's sound goes to BlackHole, so its speakers are quiet. To hear it on both, create a **Multi-Output Device** in Audio MIDI Setup (speakers + BlackHole), select it, and set `HOMESTREAM_AUTO_ROUTE=0`.
 
 ### Settings
 
@@ -94,7 +94,7 @@ Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source che
 | `HOMESTREAM_TRUST_TAILSCALE` | `1` | `0` requires the token from everyone |
 | `HOMESTREAM_TOKEN` | random | password for devices that aren't on Tailscale |
 | `HOMESTREAM_PORT` | `8765` | |
-| `HOMESTREAM_AUTO_ROUTE` | `1` | macOS: switch the output to BlackHole while running |
+| `HOMESTREAM_AUTO_ROUTE` | `1` | macOS: switch the output to BlackHole while a phone is listening |
 | `HOMESTREAM_SNAPCAST` | `0` | also run a [Snapcast](https://github.com/badaix/snapcast) server (macOS/Linux) |
 
 ### How it works
@@ -118,6 +118,7 @@ Settings are `HOMESTREAM_*` variables in a settings file: `.env` in a source che
 
 * **Tailscale devices** get in without a password: only when both ends of the connection are Tailscale addresses, so a device on the local network can't pass itself off as one.
 * **Everything else** needs the token: an `Authorization: Bearer <token>` header, or the cookie set when it's entered on the page. Links of the form `/#token=…` keep it in the URL fragment, which never reaches servers or logs.
+* **Other websites can't press the buttons.** Browsers label requests sent by other sites, and HomeStream refuses those, so a web page open on your phone can't skip your music. (`curl` and other tools aren't affected.)
 * The **Connect a phone** page (`/pair`) is only served to the computer's own browser.
 * Don't port-forward 8765 to the internet; traffic is plain HTTP. For access beyond your tailnet, put HTTPS in front (`tailscale serve` / `funnel`).
 
