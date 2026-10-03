@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "homestream"
-version = "0.2.0"
+version = "0.2.1"
 description = "Listen to whatever your computer is playing from your phone, anywhere, and control it."
 readme = "README.md"
 license = "MIT"
