@@ -38,7 +38,7 @@ The first time you open it (the apps aren't signed yet):
 
 That's it. Next time, just open HomeStream on your phone.
 
-> **Windows status:** tested on Windows 11 in a virtual machine (clean audio, controls, tray app, `HomeStream.exe`), not yet on a physical PC with Spotify. Reports welcome.
+> **Windows status:** tested on Windows 11 in a virtual machine with the downloaded `HomeStream.exe`: clean audio, controls, the tray app and start at login. Not yet on a physical PC with Spotify; reports welcome.
 
 ## Troubleshooting
 
