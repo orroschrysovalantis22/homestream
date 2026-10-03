@@ -22,7 +22,7 @@ Play Spotify Web, YouTube, Apple Music or anything else on the Mac. On your phon
 └─────────────────────────────────────────────────────┘          └──────────────────────────┘
 ```
 
-* **Any phone, no app.** A web page you add to your Home Screen. It keeps playing with the screen locked, and the lock screen shows the track with working buttons.
+* **Any phone, no app.** A web page you add to your Home Screen, tested on iPhone (Safari) and Android (Chrome). It keeps playing with the screen locked, and the lock screen shows the track with working buttons.
 * **About half a second behind live.** Fast enough that pressing ⏭ feels immediate (plus whatever time the music service takes to load the next song).
 * **Works with any player.** Controls and track info come from macOS's own Now Playing, the same thing Control Center shows: browser tabs, the Spotify app, Apple Music and more. No special permissions.
 * **No password on your own devices.** Tailscale already proves the phone is yours. Anything else, like a device on the Mac's Wi-Fi, needs the token.
@@ -180,6 +180,23 @@ control-server/.venv/bin/python control-server/capture.py --seconds 15 "BlackHol
   ffmpeg -f s16le -ar 48000 -ac 2 -i - -ac 1 -ar 44100 -f s16le rec.raw
 control-server/.venv/bin/python tools/analyze_test_signal.py rec.raw   # beeps 1000 ms apart = clean
 ```
+
+### Testing on a (simulated) Android phone
+
+`tools/android.sh` drives an Android emulator. It can press the phone's media buttons and read what Android's media controls show, so lock-screen behaviour is testable too:
+
+```bash
+brew install --cask android-commandlinetools
+sdkmanager --licenses
+sdkmanager "platform-tools" "emulator" "system-images;android-36;google_apis_playstore;arm64-v8a"
+tools/android.sh create && tools/android.sh boot
+tools/harness.sh
+tools/android.sh open "http://10.0.2.2:8766/?debug#token=harness-token-0123456789"   # 10.0.2.2 = the Mac
+tools/android.sh key next     # the media "next" button; check the test relay's /status
+tools/android.sh media        # title, playing state and available actions, as the lock screen sees them
+```
+
+The emulator's sound link to the Mac is unreliable, so on Android check playback with `adb shell dumpsys audio` (Chrome's player should be `state:started`) rather than by recording.
 
 ### Layout
 

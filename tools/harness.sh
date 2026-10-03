@@ -4,7 +4,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG="${HARNESS_LOG:-/tmp/homestream-harness.log}"
-lsof -ti tcp:8766 | xargs kill 2>/dev/null || true
+# Only the process listening on the port: clients (browsers, emulators) are connected to it too.
+lsof -ti tcp:8766 -sTCP:LISTEN | xargs kill 2>/dev/null || true
 sleep 0.5
 env HOMESTREAM_ENV_FILE=/nonexistent HOMESTREAM_TOKEN=harness-token-0123456789 \
     HOMESTREAM_AUDIO_DEVICE=test-signal HOMESTREAM_PLAYER=dryrun HOMESTREAM_HOST=0.0.0.0 HOMESTREAM_PORT=8766 "$@" \
