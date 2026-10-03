@@ -29,6 +29,12 @@ from typing import Iterator
 RATE = 48000
 CHANNELS = 2
 BLOCK = 960  # frames: 20 ms
+# On Windows, soundcard makes the WASAPI buffer exactly as long as its blocksize. One
+# 20 ms block overflows whenever the reader is a little late (a busy or virtual
+# machine), which loses audio. 200 ms leaves room and adds no delay: data is still
+# read as soon as it arrives. (On Linux blocksize is the PulseAudio fragment size,
+# which does add delay, so it stays one block there.)
+WASAPI_BUFFER = RATE // 5
 TEST_DEVICES = ("test-tone", "test-signal")
 
 
@@ -155,21 +161,25 @@ class LoopbackSource(Source):
         # silence underneath keeps it flowing, so the stream doesn't stall between songs.
         import numpy as np
 
-        silence = np.zeros((BLOCK, CHANNELS), dtype="float32")
+        silence = np.zeros((RATE // 10, CHANNELS), dtype="float32")
         try:
-            with self.speaker.player(samplerate=RATE, channels=CHANNELS) as player:
+            with self.speaker.player(samplerate=RATE, channels=CHANNELS, blocksize=WASAPI_BUFFER) as player:
                 while not self._stop.is_set():
-                    player.play(silence)
+                    player.play(silence)  # returns once it's queued
+                    time.sleep(0.08)  # instead of soundcard's 1 ms polling while the buffer is full
         except Exception:
             pass
 
     def blocks(self) -> Iterator[bytes]:
         import numpy as np
 
-        if sys.platform == "win32" and self.speaker is not None:
-            threading.Thread(target=self._keep_output_running, daemon=True).start()
+        buffer = BLOCK
+        if sys.platform == "win32":
+            buffer = WASAPI_BUFFER
+            if self.speaker is not None:
+                threading.Thread(target=self._keep_output_running, daemon=True).start()
         try:
-            with self.mic.recorder(samplerate=RATE, channels=CHANNELS, blocksize=BLOCK) as recorder:
+            with self.mic.recorder(samplerate=RATE, channels=CHANNELS, blocksize=buffer) as recorder:
                 while not self._stop.is_set():
                     data = recorder.record(numframes=BLOCK)
                     if data.ndim == 1:
