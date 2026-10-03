@@ -41,6 +41,22 @@ def on_ui_thread(fn) -> None:
     fn()
 
 
+def use_menu_bar_glyph(icon, path) -> None:
+    """macOS: a one-colour "template" icon, which the menu bar tints for light and dark mode like
+    its own icons, at Retina resolution (pystray draws the colour app icon at 1x). Main thread only."""
+    try:
+        from AppKit import NSImage
+
+        image = NSImage.alloc().initWithContentsOfFile_(str(path))
+        thickness = icon._status_bar.thickness()
+        image.setSize_((thickness, thickness))
+        image.setTemplate_(True)
+        icon._icon_image = image  # pystray keeps it as long as the size matches
+        icon._status_item.button().setImage_(image)
+    except Exception:  # pystray internals changed: keep its colour icon
+        log.warning("couldn't set the menu bar icon", exc_info=True)
+
+
 def run() -> int:
     try:
         import pystray
@@ -137,6 +153,9 @@ def run() -> int:
 
     def setup(icon):
         icon.visible = True
+        if sys.platform == "darwin":
+            glyph = PACKAGE_DIR / "web" / "static" / "tray" / "menubar-template.png"
+            on_ui_thread(lambda: use_menu_bar_glyph(icon, glyph))
         log.info("tray icon shown; server on port %s", port)
         threading.Thread(target=check_audio, daemon=True).start()
         threading.Thread(target=refresh, daemon=True).start()
