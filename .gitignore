@@ -1,4 +1,5 @@
 .env
+homestream.log
 .homestream/
 .venv/
 *.egg-info/
