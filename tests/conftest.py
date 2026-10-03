@@ -19,8 +19,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 SERVER_CMD = [sys.executable, "-m", "homestream", "serve"]
-# Tests that import the server module must not pick up the developer's real .env.
+# Tests that import the server module must not pick up the developer's real .env,
+# nor depend on this machine's audio devices and media apps (CI has neither).
 os.environ["HOMESTREAM_ENV_FILE"] = str(ROOT / "tests" / "does-not-exist.env")
+os.environ["HOMESTREAM_PLAYER"] = "dryrun"
+os.environ["HOMESTREAM_AUDIO_DEVICE"] = "test-tone"
 
 TOKEN = "test-token-0123456789abcdef"
 

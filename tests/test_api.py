@@ -2,6 +2,7 @@
 
 import http.client
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -124,7 +125,7 @@ def test_two_listeners_share_one_capture(server):
 def test_refuses_to_start_without_a_real_token():
     result = subprocess.run(
         SERVER_CMD, cwd=ROOT,
-        env={"PATH": "/usr/bin:/bin", "HOMESTREAM_ENV_FILE": str(ROOT / "tests" / "nope.env"), "HOMESTREAM_TOKEN": "short"},
+        env={**os.environ, "HOMESTREAM_TOKEN": "short"},  # all of it: Windows can't start networking without SYSTEMROOT
         capture_output=True, text=True, timeout=20,
     )
     assert result.returncode != 0
@@ -185,8 +186,7 @@ def test_runs_without_a_token_but_then_only_tailscale_gets_in():
 def test_refuses_to_start_when_nobody_could_connect():
     result = subprocess.run(
         SERVER_CMD, cwd=ROOT,
-        env={"PATH": "/usr/bin:/bin", "HOMESTREAM_ENV_FILE": str(ROOT / "tests" / "nope.env"),
-             "HOMESTREAM_TOKEN": "", "HOMESTREAM_TRUST_TAILSCALE": "0"},
+        env={**os.environ, "HOMESTREAM_TOKEN": "", "HOMESTREAM_TRUST_TAILSCALE": "0"},
         capture_output=True, text=True, timeout=20,
     )
     assert result.returncode != 0
